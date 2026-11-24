@@ -1,0 +1,10 @@
+{
+  "description": "Ayuda a docentes de primaria en Perú a registrar evaluaciones, detectar dificultades y dar seguimiento al refuerzo y progreso de sus estudiantes.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
