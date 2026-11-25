@@ -4,12 +4,22 @@ import { config } from '../config/env.js';
 const { Pool } = pg;
 
 // Configuración de pool de conexiones PostgreSQL nativo con `pg`
+const isLocalDatabase =
+  !config.DATABASE_URL ||
+  config.DATABASE_URL.includes('localhost') ||
+  config.DATABASE_URL.includes('127.0.0.1');
+
+const requiresSsl =
+  process.env.DB_SSL === 'true' ||
+  config.DATABASE_URL.includes('render.com') ||
+  config.DATABASE_URL.includes('neon.tech') ||
+  config.DATABASE_URL.includes('supabase.co') ||
+  (config.NODE_ENV === 'production' && !isLocalDatabase && process.env.DB_SSL !== 'false');
+
 const poolConfig: pg.PoolConfig = config.DATABASE_URL
   ? {
       connectionString: config.DATABASE_URL,
-      ssl: config.NODE_ENV === 'production' || config.DATABASE_URL.includes('render.com') || config.DATABASE_URL.includes('neon.tech') || config.DATABASE_URL.includes('supabase.co')
-        ? { rejectUnauthorized: false }
-        : false,
+      ssl: requiresSsl ? { rejectUnauthorized: false } : false,
     }
   : {
       host: process.env.PGHOST || 'localhost',

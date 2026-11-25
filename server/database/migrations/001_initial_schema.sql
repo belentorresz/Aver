@@ -138,6 +138,7 @@ CREATE TABLE IF NOT EXISTS criterios_evaluacion (
 
 CREATE INDEX IF NOT EXISTS idx_criterios_area_id ON criterios_evaluacion(area_id);
 CREATE INDEX IF NOT EXISTS idx_criterios_docente_id ON criterios_evaluacion(docente_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_criterios_base_unicos ON criterios_evaluacion(area_id, descripcion) WHERE docente_id IS NULL;
 
 -- 11. Archivos importados (OCR / Excel)
 CREATE TABLE IF NOT EXISTS archivos_importados (

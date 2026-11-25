@@ -8,6 +8,7 @@ export interface DocenteProfile {
   institucionEducativa: string;
   nivelEducativo: string;
   telefono?: string;
+  fotoPerfil?: string | null;
 }
 
 export interface ApoderadoProfile {

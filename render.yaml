@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: aver-plataforma
+    runtime: node
+    plan: free
+    buildCommand: corepack enable && pnpm install --frozen-lockfile=false && pnpm run build
+    startCommand: pnpm run migrate:prod && pnpm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      - key: DATABASE_URL
+        sync: false
+      - key: CLIENT_URL
+        sync: false

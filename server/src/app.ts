@@ -9,6 +9,9 @@ import { config } from './config/env.js';
 
 export const app = express();
 
+// Necesario detrás de proxies inversos HTTPS (Render, Nginx, etc.)
+app.set('trust proxy', 1);
+
 // Seguridad con Helmet (permitiendo CSP para scripts locales si sirve frontend)
 app.use(
   helmet({
@@ -24,8 +27,8 @@ app.use(
   })
 );
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '15mb' }));
+app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
 // Rutas de API REST
 app.use('/api/auth', authRouter);
@@ -43,8 +46,11 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// En producción (Render), servir la aplicación compilada de frontend Vite
+// En producción (Render), devolver 404 JSON para rutas /api no encontradas y servir frontend compilado
 if (config.NODE_ENV === 'production') {
+  app.use('/api', (req, res) => {
+    res.status(404).json({ success: false, message: 'Ruta de API no encontrada' });
+  });
   const distPath = path.resolve(process.cwd(), 'dist');
   app.use(express.static(distPath));
   app.get('*', (req, res) => {

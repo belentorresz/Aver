@@ -7,9 +7,13 @@
     "skipLibCheck": true,
     "strict": true,
     "resolveJsonModule": true,
-    "outDir": "../dist/server",
+    "outDir": "../dist-server",
     "rootDir": "./src",
-    "types": ["node"]
+    "types": [
+      "node"
+    ]
   },
-  "include": ["src/**/*"]
+  "include": [
+    "src/**/*"
+  ]
 }

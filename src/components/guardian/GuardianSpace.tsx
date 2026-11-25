@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
+import { ApoderadoAgendaSection } from '../agenda/AgendaShared';
 
 export function GuardianSpace() {
   const { user, logout } = useAuth();
@@ -12,7 +13,7 @@ export function GuardianSpace() {
   const [showLinkModal, setShowLinkModal] = useState(false);
   const [linkCode, setLinkCode] = useState('');
   const [linkMsg, setLinkMsg] = useState({ type: '', text: '' });
-  const [activeTab, setActiveTab] = useState<'resumen' | 'evaluaciones' | 'alertas'>('resumen');
+  const [activeTab, setActiveTab] = useState<'resumen' | 'evaluaciones' | 'alertas' | 'agenda'>('resumen');
 
   useEffect(() => {
     loadStudents();
@@ -248,6 +249,9 @@ export function GuardianSpace() {
               <button className={activeTab === 'alertas' ? 'active' : ''} onClick={() => setActiveTab('alertas')}>
                 Recomendaciones y Apoyo en Casa
               </button>
+              <button className={activeTab === 'agenda' ? 'active' : ''} onClick={() => setActiveTab('agenda')}>
+                Agenda Compartida
+              </button>
             </div>
 
             {/* Tab 1: Progreso */}
@@ -421,6 +425,11 @@ export function GuardianSpace() {
                   </ul>
                 </aside>
               </div>
+            )}
+
+            {/* Tab 4: Agenda Compartida (Solo Lectura) */}
+            {activeTab === 'agenda' && (
+              <ApoderadoAgendaSection selectedStudent={selectedStudent} />
             )}
           </>
         ) : (

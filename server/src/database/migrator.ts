@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { pool, query } from './connection.js';
+import { pool, query, withTransaction } from './connection.js';
 
-export async function runMigrations() {
+export async function runMigrations(): Promise<boolean> {
   console.log('--- Iniciando verificación de migraciones PostgreSQL ---');
   try {
     // 1. Asegurar tabla de historial de migraciones
@@ -18,12 +18,14 @@ export async function runMigrations() {
     const migrationsDir = path.resolve(process.cwd(), 'server', 'database', 'migrations');
     if (!fs.existsSync(migrationsDir)) {
       console.warn(`Directorio de migraciones no encontrado en: ${migrationsDir}`);
-      return;
+      return false;
     }
 
     const files = fs.readdirSync(migrationsDir)
       .filter((file) => file.endsWith('.sql'))
       .sort();
+
+    let appliedCount = 0;
 
     for (const file of files) {
       const alreadyApplied = await query(
@@ -36,23 +38,63 @@ export async function runMigrations() {
         const filePath = path.join(migrationsDir, file);
         const sql = fs.readFileSync(filePath, 'utf-8');
 
-        // Ejecutar script SQL completo
-        await query(sql);
+        // Ejecutar script SQL completo de manera transaccional
+        await withTransaction(async (client) => {
+          await client.query(sql);
+          // Registrar en historial dentro de la misma transacción
+          await client.query(
+            'INSERT INTO migrations_history (migration_name) VALUES ($1)',
+            [file]
+          );
+        });
 
-        // Registrar en historial
-        await query(
-          'INSERT INTO migrations_history (migration_name) VALUES ($1)',
-          [file]
-        );
-        console.log(`Migración completada exitosamente: ${file}`);
+        console.log(`✅ Migración completada exitosamente: ${file}`);
+        appliedCount++;
       } else {
-        // Ya ejecutada previamente
+        console.log(`ℹ️  Migración ya aplicada previamente: ${file}`);
       }
     }
-    console.log('--- Todas las migraciones están al día ---');
+
+    if (appliedCount > 0) {
+      console.log(`--- Se aplicaron ${appliedCount} migraciones exitosamente ---`);
+    } else {
+      console.log('--- Todas las migraciones están al día (0 pendientes) ---');
+    }
+    return true;
   } catch (error: any) {
-    console.error('Error al ejecutar las migraciones SQL:', error.message);
-    // No detenemos el servidor por completo si no hay DB configurada en local
-    // para permitir inspección y mensaje claro al desarrollador
+    console.error('❌ Error al ejecutar las migraciones SQL:', error.message);
+    throw error;
   }
+}
+
+
+// Soporte para ejecución directa vía CLI exclusivamente con: npm run migrate
+const isDirectExecution = Boolean(
+  process.argv[1] &&
+  (
+    process.argv[1].endsWith('migrator.ts') ||
+    process.argv[1].endsWith('migrator.js')
+  )
+);
+
+if (isDirectExecution) {
+  (async () => {
+    try {
+      await runMigrations();
+      console.log('Migraciones ejecutadas exitosamente.');
+    } catch (err: any) {
+      console.error(
+        'Error durante la ejecución de migraciones:',
+        err.message
+      );
+      process.exitCode = 1;
+    } finally {
+      try {
+        await pool.end();
+      } catch (closeError: any) {
+        console.error('Error al cerrar el pool:', closeError.message);
+        process.exitCode = 1;
+      }
+    }
+  })();
 }

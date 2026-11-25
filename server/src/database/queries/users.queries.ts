@@ -21,6 +21,7 @@ export interface DocenteRow {
   institucion_educativa: string;
   nivel_educativo: string;
   telefono?: string;
+  foto_perfil?: string | null;
   created_at: Date;
   updated_at: Date;
 }
@@ -289,4 +290,145 @@ export async function markEmailVerified(usuarioId: number) {
     'UPDATE usuarios SET email_verificado = TRUE WHERE id = $1',
     [usuarioId]
   );
+}
+
+export function mapDocenteToSafeUser(usuario: UserRow, docente: DocenteRow) {
+  return {
+    id: usuario.id,
+    dni: usuario.dni,
+    email: usuario.email,
+    rol: usuario.rol,
+    docente: {
+      id: docente.id,
+      nombres: docente.nombres,
+      apellidos: docente.apellidos,
+      dni: docente.dni,
+      institucionEducativa: docente.institucion_educativa,
+      nivelEducativo: docente.nivel_educativo,
+      telefono: docente.telefono || '',
+      fotoPerfil: docente.foto_perfil || null,
+    },
+  };
+}
+
+export async function findDocenteProfileByUsuarioId(usuarioId: number) {
+  const res = await query(
+    `SELECT u.id as u_id, u.dni as u_dni, u.email as u_email, u.rol as u_rol,
+            u.activo as u_activo, u.email_verificado as u_email_verificado,
+            u.created_at as u_created_at, u.updated_at as u_updated_at,
+            d.id as d_id, d.usuario_id as d_usuario_id, d.nombres, d.apellidos,
+            d.dni as d_dni, d.institucion_educativa, d.nivel_educativo,
+            d.telefono, d.foto_perfil, d.created_at as d_created_at, d.updated_at as d_updated_at
+     FROM usuarios u
+     JOIN docentes d ON d.usuario_id = u.id
+     WHERE u.id = $1 AND u.rol = 'DOCENTE'
+     LIMIT 1`,
+    [usuarioId]
+  );
+  const row = res.rows[0];
+  if (!row) return null;
+
+  return {
+    id: row.u_id,
+    dni: row.u_dni,
+    email: row.u_email,
+    rol: row.u_rol as 'DOCENTE',
+    docente: {
+      id: row.d_id,
+      nombres: row.nombres,
+      apellidos: row.apellidos,
+      dni: row.d_dni,
+      institucionEducativa: row.institucion_educativa,
+      nivelEducativo: row.nivel_educativo,
+      telefono: row.telefono || '',
+      fotoPerfil: row.foto_perfil || null,
+    },
+  };
+}
+
+export async function updateDocenteProfileTransaction(
+  usuarioId: number,
+  docenteId: number,
+  data: {
+    nombres: string;
+    apellidos: string;
+    email: string;
+    telefono?: string | null;
+    institucionEducativa: string;
+    nivelEducativo: string;
+  }
+) {
+  return withTransaction(async (client) => {
+    // 1. Verificar que el correo no pertenezca a otro usuario
+    const emailConflict = await client.query(
+      'SELECT id FROM usuarios WHERE LOWER(email) = LOWER($1) AND id <> $2 LIMIT 1',
+      [data.email.trim(), usuarioId]
+    );
+    if (emailConflict.rows.length > 0) {
+      const err: any = new Error('Ya existe otra cuenta registrada con este correo electrónico.');
+      err.status = 409;
+      throw err;
+    }
+
+    // 2. Actualizar correo electrónico en usuarios (sin modificar DNI ni rol)
+    const userRes = await client.query<UserRow>(
+      `UPDATE usuarios
+       SET email = LOWER($1), updated_at = CURRENT_TIMESTAMP
+       WHERE id = $2 AND rol = 'DOCENTE'
+       RETURNING *`,
+      [data.email.trim(), usuarioId]
+    );
+    if (userRes.rows.length === 0) {
+      const err: any = new Error('Cuenta docente no encontrada.');
+      err.status = 404;
+      throw err;
+    }
+
+    // 3. Actualizar perfil en docentes (sin modificar DNI ni usuario_id)
+    const docenteRes = await client.query<DocenteRow>(
+      `UPDATE docentes
+       SET nombres = $1,
+           apellidos = $2,
+           institucion_educativa = $3,
+           nivel_educativo = $4,
+           telefono = $5,
+           updated_at = CURRENT_TIMESTAMP
+       WHERE id = $6 AND usuario_id = $7
+       RETURNING *`,
+      [
+        data.nombres.trim(),
+        data.apellidos.trim(),
+        data.institucionEducativa.trim(),
+        data.nivelEducativo.trim(),
+        data.telefono?.trim() || null,
+        docenteId,
+        usuarioId,
+      ]
+    );
+    if (docenteRes.rows.length === 0) {
+      const err: any = new Error('Perfil docente no encontrado.');
+      err.status = 404;
+      throw err;
+    }
+
+    return mapDocenteToSafeUser(userRes.rows[0], docenteRes.rows[0]);
+  });
+}
+
+export async function updateDocenteFotoPerfil(
+  usuarioId: number,
+  docenteId: number,
+  fotoPerfil: string | null
+) {
+  const res = await query<DocenteRow>(
+    `UPDATE docentes
+     SET foto_perfil = $1,
+         updated_at = CURRENT_TIMESTAMP
+     WHERE id = $2 AND usuario_id = $3
+     RETURNING *`,
+    [fotoPerfil, docenteId, usuarioId]
+  );
+  if (res.rows.length === 0) return null;
+
+  return findDocenteProfileByUsuarioId(usuarioId);
 }

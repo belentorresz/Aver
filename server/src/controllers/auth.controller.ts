@@ -10,6 +10,7 @@ import {
   findValidResetToken,
   updateUserPassword,
   markResetTokenUsed,
+  mapDocenteToSafeUser,
 } from '../database/queries/users.queries.js';
 import {
   hashPassword,
@@ -72,19 +73,7 @@ export async function registerDocente(req: Request, res: Response): Promise<void
       success: true,
       message: 'Docente registrado exitosamente. Se ha enviado un enlace de verificación a su correo.',
       token,
-      user: {
-        id: usuario.id,
-        dni: usuario.dni,
-        email: usuario.email,
-        rol: usuario.rol,
-        docente: {
-          id: docente.id,
-          nombres: docente.nombres,
-          apellidos: docente.apellidos,
-          institucionEducativa: docente.institucion_educativa,
-          nivelEducativo: docente.nivel_educativo,
-        },
-      },
+      user: mapDocenteToSafeUser(usuario, docente),
     });
   } catch (error: any) {
     console.error('Error en registerDocente:', error);
@@ -159,19 +148,7 @@ export async function loginDocente(req: Request, res: Response): Promise<void> {
       success: true,
       message: `¡Bienvenida/o, docente ${docente.nombres}!`,
       token,
-      user: {
-        id: usuario.id,
-        dni: usuario.dni,
-        email: usuario.email,
-        rol: usuario.rol,
-        docente: {
-          id: docente.id,
-          nombres: docente.nombres,
-          apellidos: docente.apellidos,
-          institucionEducativa: docente.institucion_educativa,
-          nivelEducativo: docente.nivel_educativo,
-        },
-      },
+      user: mapDocenteToSafeUser(usuario, docente),
     });
   } catch (error: any) {
     console.error('Error en loginDocente:', error);
@@ -416,7 +393,14 @@ export async function getMe(req: AuthenticatedRequest, res: Response): Promise<v
     let apoderado = null;
 
     if (usuario.rol === 'DOCENTE') {
-      docente = await findDocenteByUsuarioId(usuario.id);
+      const docenteRow = await findDocenteByUsuarioId(usuario.id);
+      if (docenteRow) {
+        res.json({
+          success: true,
+          user: mapDocenteToSafeUser(usuario, docenteRow),
+        });
+        return;
+      }
     } else if (usuario.rol === 'APODERADO') {
       apoderado = await findApoderadoByUsuarioId(usuario.id);
     }
