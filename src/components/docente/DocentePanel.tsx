@@ -1399,44 +1399,129 @@ function StudentsPage({
         )}
       </div>
 
+
       {/* Modal 1: Agregar Estudiante Individual */}
       {showAddModal && (
         <div className="modal-backdrop">
-          <div className="comparison-modal" style={{ maxWidth: '500px' }}>
-            <button type="button" className="modal-close" onClick={() => setShowAddModal(false)}>✕</button>
+          <div
+            className="comparison-modal"
+            style={{ maxWidth: '460px', width: '95%', padding: '24px' }}
+          >
+            <button
+              type="button"
+              className="modal-close"
+              onClick={() => setShowAddModal(false)}
+            >
+              ✕
+            </button>
+
             <span className="badge purple">Nuevo estudiante</span>
-            <h1 style={{ fontSize: '20px' }}>Registrar estudiante en aula</h1>
-            <p className="modal-subtitle">Se generará automáticamente un código único y seguro para su apoderado.</p>
-            {addErr && <div className="auth-alert error" style={{ marginTop: '12px' }}>{addErr}</div>}
-            <form onSubmit={handleAddStudent} style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div className="form-grid">
-                <label>
-                  Nombres
-                  <input value={nombres} onChange={(e) => setNombres(e.target.value)} required placeholder="Ej. Ana Lucía" style={{ height: '40px', borderRadius: '8px', border: '1px solid #DDD7E3', padding: '0 10px' }} />
-                </label>
-                <label>
-                  Apellidos
-                  <input value={apellidos} onChange={(e) => setApellidos(e.target.value)} required placeholder="Ej. Ramos Mendoza" style={{ height: '40px', borderRadius: '8px', border: '1px solid #DDD7E3', padding: '0 10px' }} />
-                </label>
-                <label>
-                  DNI (opcional, 8 dígitos)
-                  <input value={dni} onChange={(e) => setDni(e.target.value)} maxLength={8} placeholder="8 dígitos" style={{ height: '40px', borderRadius: '8px', border: '1px solid #DDD7E3', padding: '0 10px' }} />
-                </label>
-                <label>
-                  Código (opcional, ej. EST-009)
-                  <input value={codigo} onChange={(e) => setCodigo(e.target.value)} placeholder="Auto si está vacío" style={{ height: '40px', borderRadius: '8px', border: '1px solid #DDD7E3', padding: '0 10px' }} />
-                </label>
-                <label>
+
+            <h1 style={{ fontSize: '19px', marginBottom: '5px' }}>
+              Registrar estudiante en aula
+            </h1>
+
+            <p className="modal-subtitle" style={{ fontSize: '13px', marginBottom: '0' }}>
+              Se generará automáticamente un código único y seguro para su apoderado.
+            </p>
+
+            {addErr && (
+              <div className="auth-alert error" style={{ marginTop: '10px' }}>
+                {addErr}
+              </div>
+            )}
+
+            <form
+              onSubmit={handleAddStudent}
+              style={{
+                marginTop: '14px',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '10px'
+              }}
+            >
+              <div
+                className="form-grid"
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+                  gap: '10px 12px'
+                }}
+              >
+                {[
+                  { label: 'Nombres', value: nombres, set: setNombres, placeholder: 'Ej. Ana Lucía', required: true },
+                  { label: 'Apellidos', value: apellidos, set: setApellidos, placeholder: 'Ej. Ramos Mendoza', required: true },
+                  { label: 'DNI (opcional)', value: dni, set: setDni, placeholder: '8 dígitos', maxLength: 8 },
+                  { label: 'Código (opcional)', value: codigo, set: setCodigo, placeholder: 'Auto si está vacío' }
+                ].map((field) => (
+                  <label
+                    key={field.label}
+                    style={{
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '5px',
+                      fontSize: '12px',
+                      minWidth: 0
+                    }}
+                  >
+                    {field.label}
+                    <input
+                      value={field.value}
+                      onChange={(e) => field.set(e.target.value)}
+                      required={field.required}
+                      maxLength={field.maxLength}
+                      placeholder={field.placeholder}
+                      style={{
+                        width: '100%',
+                        height: '35px',
+                        boxSizing: 'border-box',
+                        borderRadius: '7px',
+                        border: '1px solid #DDD7E3',
+                        padding: '0 9px',
+                        fontSize: '13px'
+                      }}
+                    />
+                  </label>
+                ))}
+
+                <label style={{ display: 'flex', flexDirection: 'column', gap: '5px', fontSize: '12px' }}>
                   Aula asignada
-                  <select value={newAulaId} onChange={(e) => setNewAulaId(e.target.value)} style={{ height: '40px', borderRadius: '8px', border: '1px solid #DDD7E3', padding: '0 10px' }}>
+                  <select
+                    value={newAulaId}
+                    onChange={(e) => setNewAulaId(e.target.value)}
+                    style={{
+                      width: '100%',
+                      height: '35px',
+                      boxSizing: 'border-box',
+                      borderRadius: '7px',
+                      border: '1px solid #DDD7E3',
+                      padding: '0 9px',
+                      fontSize: '13px'
+                    }}
+                  >
                     {aulas.map((a) => (
-                      <option key={a.id} value={String(a.id)}>{a.grado} {a.seccion}</option>
+                      <option key={a.id} value={String(a.id)}>
+                        {a.grado} {a.seccion}
+                      </option>
                     ))}
                   </select>
                 </label>
-                <label>
+
+                <label style={{ display: 'flex', flexDirection: 'column', gap: '5px', fontSize: '12px' }}>
                   Color de avatar
-                  <select value={colorAvatar} onChange={(e) => setColorAvatar(e.target.value)} style={{ height: '40px', borderRadius: '8px', border: '1px solid #DDD7E3', padding: '0 10px' }}>
+                  <select
+                    value={colorAvatar}
+                    onChange={(e) => setColorAvatar(e.target.value)}
+                    style={{
+                      width: '100%',
+                      height: '35px',
+                      boxSizing: 'border-box',
+                      borderRadius: '7px',
+                      border: '1px solid #DDD7E3',
+                      padding: '0 9px',
+                      fontSize: '13px'
+                    }}
+                  >
                     <option value="#D9C8EF">Lila</option>
                     <option value="#BEE3D0">Menta</option>
                     <option value="#C8D9F5">Celeste</option>
@@ -1444,8 +1529,15 @@ function StudentsPage({
                   </select>
                 </label>
               </div>
-              <div className="modal-actions">
-                <button type="button" className="btn secondary" onClick={() => setShowAddModal(false)}>Cancelar</button>
+
+              <div className="modal-actions" style={{ marginTop: '5px' }}>
+                <button
+                  type="button"
+                  className="btn secondary"
+                  onClick={() => setShowAddModal(false)}
+                >
+                  Cancelar
+                </button>
                 <button type="submit" className="btn primary" disabled={savingStudent}>
                   {savingStudent ? 'Guardando...' : 'Registrar estudiante'}
                 </button>
@@ -1454,6 +1546,7 @@ function StudentsPage({
           </div>
         </div>
       )}
+
 
       {/* Modal 2: Editar Estudiante */}
       {showEditModal && (
