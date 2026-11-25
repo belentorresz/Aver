@@ -1,6 +1,6 @@
 # AVer — "A ver cómo vamos"
 
-Plataforma académica de seguimiento escolar orientada a instituciones educativas, con acceso independiente para **docentes** y **apoderados**, persistencia en **PostgreSQL** mediante consultas SQL directas con `pg` (sin ORM) y arquitectura full-stack con **React + TypeScript + Vite + Node.js + Express**.
+Plataforma académica de seguimiento escolar orientada a instituciones educativas, con acceso independiente para **docentes** y **apoderados**, persistencia en **PostgreSQL** mediante consultas SQL directas con `pg` arquitectura full-stack con **React + TypeScript + Vite + Node.js + Express**.
 
 ---
 
