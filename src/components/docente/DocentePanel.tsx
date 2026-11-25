@@ -619,9 +619,14 @@ function Classrooms({
                   </span>
                 </div>
                 <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                  <Button variant="secondary" onClick={() => onEnterAula(a.id)} style={{ flex: 1 }}>
-                    Ingresar al aula <Icon name="arrow" size={16} />
-                  </Button>
+                  <div style={{ flex: 1 }}>
+                    <Button
+                      variant="secondary"
+                      onClick={() => onEnterAula(a.id)}
+                    >
+                      Ingresar al aula <Icon name="arrow" size={16} />
+                    </Button>
+                  </div>
                   <button
                     type="button"
                     title="Eliminar aula"
