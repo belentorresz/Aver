@@ -333,7 +333,7 @@ function Dashboard({
       </PageHeader>
       <div className="summary-grid">
         {[
-          ['class', 'Aulas registradas', String(counts.total_aulas), 'En PostgreSQL', 'purple'],
+          ['class', 'Aulas registradas', String(counts.total_aulas), 'purple'],
           ['users', 'Estudiantes', String(counts.total_estudiantes), `En ${counts.total_aulas} aulas`, 'blue'],
           ['clipboard', 'Evaluaciones realizadas', String(counts.total_evaluaciones), `${counts.evaluaciones_por_revisar} por revisar`, 'green'],
           ['warning', 'Necesitan atención', String(counts.estudiantes_con_alerta), `${counts.alertas_activas} alertas activas`, 'orange'],
