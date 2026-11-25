@@ -4,10 +4,15 @@ import { AuthenticatedRequest } from '../middlewares/auth.middleware.js';
 import {
   findAulasByDocente,
   createAula,
+  deleteAula,
   findEstudiantesByDocente,
   findEstudianteByIdAndDocente,
   findEstudianteAnalisisCompleto,
   createEstudiante,
+  createEstudiantesBatch,
+  regenerateStudentLinkCode,
+  updateEstudiante,
+  deleteEstudiante,
 } from '../database/queries/students.queries.js';
 import {
   findAreasAcademicas,
@@ -46,6 +51,80 @@ export async function addAula(req: AuthenticatedRequest, res: Response): Promise
     const status = error.code === '23505' ? 409 : 400;
     const message = error.code === '23505' ? 'Ya existe un aula con ese grado, sección y año escolar.' : error.message;
     res.status(status).json({ success: false, message });
+  }
+}
+
+export async function importEstudiantesBatch(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const docenteId = req.user!.docenteId!;
+    const { aulaId, estudiantes } = req.body;
+
+    const result = await createEstudiantesBatch(docenteId, Number(aulaId), estudiantes);
+    res.status(201).json(result);
+  } catch (error: any) {
+    res.status(400).json({ success: false, message: error.message });
+  }
+}
+
+export async function regenerateCodigoEstudiante(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const docenteId = req.user!.docenteId!;
+    const estudianteId = parseInt(req.params.id, 10);
+
+    const result = await regenerateStudentLinkCode(docenteId, estudianteId);
+    res.json({
+      success: true,
+      message: 'Código de vinculación regenerado exitosamente.',
+      data: result,
+    });
+  } catch (error: any) {
+    res.status(400).json({ success: false, message: error.message });
+  }
+}
+
+export async function editEstudiante(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const docenteId = req.user!.docenteId!;
+    const estudianteId = parseInt(req.params.id, 10);
+
+    const updated = await updateEstudiante(docenteId, estudianteId, req.body);
+    res.json({
+      success: true,
+      message: 'Datos del estudiante actualizados correctamente.',
+      data: updated,
+    });
+  } catch (error: any) {
+    res.status(400).json({ success: false, message: error.message });
+  }
+}
+
+export async function removeEstudiante(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const docenteId = req.user!.docenteId!;
+    const estudianteId = parseInt(req.params.id, 10);
+
+    await deleteEstudiante(docenteId, estudianteId);
+    res.json({
+      success: true,
+      message: 'Estudiante eliminado correctamente del registro.',
+    });
+  } catch (error: any) {
+    res.status(400).json({ success: false, message: error.message });
+  }
+}
+
+export async function removeAula(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const docenteId = req.user!.docenteId!;
+    const aulaId = parseInt(req.params.id, 10);
+
+    await deleteAula(docenteId, aulaId);
+    res.json({
+      success: true,
+      message: 'Aula eliminada correctamente.',
+    });
+  } catch (error: any) {
+    res.status(400).json({ success: false, message: error.message });
   }
 }
 

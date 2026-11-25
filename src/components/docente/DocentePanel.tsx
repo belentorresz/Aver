@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from 'react';
+import * as XLSX from 'xlsx';
 import { User } from '../../types/auth';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../services/api';
@@ -541,6 +542,22 @@ function Classrooms({
     }
   }
 
+  async function handleDeleteAula(a: any) {
+    if (!window.confirm(`¿Está seguro de eliminar el aula ${a.grado} ${a.seccion}?`)) {
+      return;
+    }
+    try {
+      const res = await api.deleteDocenteAula(a.id);
+      if (res.success) {
+        onCreatedAula();
+      } else {
+        alert(res.message || 'No se pudo eliminar el aula.');
+      }
+    } catch {
+      alert('Error de red al eliminar el aula.');
+    }
+  }
+
   return (
     <>
       <PageHeader title="Mis aulas" subtitle="Organiza tus estudiantes y evaluaciones por aula (datos reales PostgreSQL)">
@@ -567,33 +584,58 @@ function Classrooms({
         <span className="records">{filteredRooms.length} aulas</span>
       </div>
 
-      <div className="room-grid">
-        {filteredRooms.map((a, idx) => (
-          <article className="room-card" key={a.id}>
-            <div className={`room-cover ${colors[idx % colors.length]}`}>
-              <span>
-                <Icon name={idx % 2 === 1 ? 'chart' : 'book'} size={30} />
-              </span>
-              <Badge tone="gray">{a.anio_escolar || '2025'}</Badge>
-            </div>
-            <div className="room-body">
-              <p>{a.nivel || 'Primaria'}</p>
-              <h2>{a.grado} {a.seccion}</h2>
-              <div className="room-stats">
+      {filteredRooms.length === 0 ? (
+        <div style={{ padding: '40px 20px', textAlign: 'center', background: '#FAF7FE', borderRadius: '14px', border: '1px dashed #DDD7E3', margin: '20px 0' }}>
+          <div style={{ display: 'inline-flex', padding: '16px', background: '#F2EDFA', borderRadius: '50%', color: '#7041B5', marginBottom: '12px' }}>
+            <Icon name="class" size={32} />
+          </div>
+          <h3 style={{ margin: '0 0 6px', fontSize: '16px', color: '#29243A' }}>Aún no tienes aulas registradas</h3>
+          <p style={{ margin: 0, fontSize: '12px', color: '#766F87', maxWidth: '420px', marginInline: 'auto' }}>
+            Crea tu primera aula para comenzar a registrar estudiantes, organizar evaluaciones curriculares y realizar seguimiento de aprendizajes.
+          </p>
+          <div style={{ marginTop: '18px' }}>
+            <Button icon="plus" onClick={() => setShowNewModal(true)}>Crear primera aula</Button>
+          </div>
+        </div>
+      ) : (
+        <div className="room-grid">
+          {filteredRooms.map((a, idx) => (
+            <article className="room-card" key={a.id}>
+              <div className={`room-cover ${colors[idx % colors.length]}`}>
                 <span>
-                  <Icon name="users" size={16} /> <b>{a.total_estudiantes ?? 0}</b> estudiantes
+                  <Icon name={idx % 2 === 1 ? 'chart' : 'book'} size={30} />
                 </span>
-                <span>
-                  <Icon name="clipboard" size={16} /> <b>{a.total_evaluaciones ?? 0}</b> evaluaciones
-                </span>
+                <Badge tone="gray">{a.anio_escolar || '2025'}</Badge>
               </div>
-              <Button variant="secondary" onClick={() => onEnterAula(a.id)}>
-                Ingresar al aula <Icon name="arrow" size={16} />
-              </Button>
-            </div>
-          </article>
-        ))}
-      </div>
+              <div className="room-body">
+                <p>{a.nivel || 'Primaria'}</p>
+                <h2>{a.grado} {a.seccion}</h2>
+                <div className="room-stats">
+                  <span>
+                    <Icon name="users" size={16} /> <b>{a.total_estudiantes ?? 0}</b> estudiantes
+                  </span>
+                  <span>
+                    <Icon name="clipboard" size={16} /> <b>{a.total_evaluaciones ?? 0}</b> evaluaciones
+                  </span>
+                </div>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <Button variant="secondary" onClick={() => onEnterAula(a.id)} style={{ flex: 1 }}>
+                    Ingresar al aula <Icon name="arrow" size={16} />
+                  </Button>
+                  <button
+                    type="button"
+                    title="Eliminar aula"
+                    onClick={() => handleDeleteAula(a)}
+                    style={{ background: 'none', border: '1px solid #E9E5EF', borderRadius: '8px', padding: '8px 10px', color: '#9E3B3B', cursor: 'pointer' }}
+                  >
+                    <Icon name="close" size={14} />
+                  </button>
+                </div>
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
 
       <section className="card table-card">
         <div className="card-heading">
@@ -666,7 +708,8 @@ function StudentTable({
         <thead>
           <tr>
             <th>Estudiante</th>
-            <th>Código</th>
+            <th>Código / DNI</th>
+            <th>Código Vinculación (Apoderado)</th>
             <th>Último resultado</th>
             <th>Seguimiento</th>
             <th />
@@ -691,7 +734,19 @@ function StudentTable({
                     </div>
                   </div>
                 </td>
-                <td className="muted">{s.codigo}</td>
+                <td className="muted">
+                  <span>{s.codigo}</span>
+                  {s.dni && <small style={{ display: 'block', fontSize: '10px' }}>DNI: {s.dni}</small>}
+                </td>
+                <td>
+                  {s.codigo_vinculacion_apoderado ? (
+                    <code style={{ fontSize: '11px', color: '#7041B5', fontWeight: 700, background: '#F6F2FC', padding: '3px 7px', borderRadius: '5px', border: '1px solid #EAE3F5' }}>
+                      {s.codigo_vinculacion_apoderado}
+                    </code>
+                  ) : (
+                    <span style={{ color: '#A098AE', fontSize: '11px' }}>—</span>
+                  )}
+                </td>
                 <td>
                   <Badge tone={resInfo.tone}>{resInfo.label}</Badge>
                 </td>
@@ -744,7 +799,7 @@ function StudentsPage({
   const [analysis, setAnalysis] = useState<any>(null);
   const [loadingAnalysis, setLoadingAnalysis] = useState(false);
 
-  // Modal agregar estudiante
+  // Modal agregar estudiante individual
   const [showAddModal, setShowAddModal] = useState(false);
   const [nombres, setNombres] = useState('');
   const [apellidos, setApellidos] = useState('');
@@ -755,8 +810,41 @@ function StudentsPage({
   const [addErr, setAddErr] = useState('');
   const [savingStudent, setSavingStudent] = useState(false);
 
+  // Modal editar estudiante
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editStudentId, setEditStudentId] = useState<number | null>(null);
+  const [editNombres, setEditNombres] = useState('');
+  const [editApellidos, setEditApellidos] = useState('');
+  const [editDni, setEditDni] = useState('');
+  const [editCodigo, setEditCodigo] = useState('');
+  const [editAulaId, setEditAulaId] = useState<string>('');
+  const [editColorAvatar, setEditColorAvatar] = useState('#D9C8EF');
+  const [editErr, setEditErr] = useState('');
+  const [savingEdit, setSavingEdit] = useState(false);
+
+  // Modal importación masiva Excel
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importStep, setImportStep] = useState<'upload' | 'preview' | 'success'>('upload');
+  const [importAulaId, setImportAulaId] = useState<string>(
+    selectedAulaId !== 'ALL' ? String(selectedAulaId) : aulas[0]?.id ? String(aulas[0].id) : ''
+  );
+  const [importFileName, setImportFileName] = useState('');
+  const [parsedRows, setParsedRows] = useState<Array<{
+    id: number;
+    nombres: string;
+    apellidos: string;
+    dni: string;
+    codigo: string;
+    status: 'VALID' | 'ERROR';
+    error?: string;
+  }>>([]);
+  const [importResults, setImportResults] = useState<any | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [copiedCodeId, setCopiedCodeId] = useState<number | null>(null);
+
   useEffect(() => {
     if (!newAulaId && aulas.length > 0) setNewAulaId(String(aulas[0].id));
+    if (!importAulaId && aulas.length > 0) setImportAulaId(String(aulas[0].id));
   }, [aulas]);
 
   const filteredStudents = useMemo(() => {
@@ -798,6 +886,252 @@ function StudentsPage({
     };
   }, [activeStudent?.id]);
 
+  // Funciones de descarga Excel con SheetJS
+  function downloadStudentTemplate() {
+    const wsData = [
+      ['Nombres', 'Apellidos', 'DNI', 'Código del Estudiante'],
+      ['Juan Carlos', 'Pérez Rodríguez', '74839201', 'EST-001'],
+      ['María Elena', 'Gómez Salazar', '74839202', 'EST-002'],
+      ['Carlos Alberto', 'Fernández Quispe', '74839203', 'EST-003'],
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    ws['!cols'] = [{ wch: 20 }, { wch: 22 }, { wch: 14 }, { wch: 22 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Estudiantes');
+    XLSX.writeFile(wb, 'plantilla_estudiantes_aver.xlsx');
+  }
+
+  function downloadLinkingCodesReport(studentList: any[], label = 'estudiantes') {
+    if (!studentList || studentList.length === 0) {
+      alert('No hay estudiantes para exportar.');
+      return;
+    }
+    const wsData = [
+      ['Nombres', 'Apellidos', 'DNI', 'Código Estudiante', 'Aula', 'Código de Vinculación para Apoderado'],
+      ...studentList.map((s) => [
+        s.nombres,
+        s.apellidos,
+        s.dni || '—',
+        s.codigo,
+        s.grado ? `${s.grado} ${s.seccion}` : 'Sin aula',
+        s.codigo_vinculacion_apoderado || 'Pendiente de generación',
+      ]),
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    ws['!cols'] = [{ wch: 20 }, { wch: 22 }, { wch: 14 }, { wch: 18 }, { wch: 16 }, { wch: 34 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Codigos_Vinculacion');
+    XLSX.writeFile(wb, `codigos_vinculacion_${label.replace(/\s+/g, '_')}.xlsx`);
+  }
+
+  // Procesamiento de archivo Excel en el navegador
+  function handleExcelUpload(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImportFileName(file.name);
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const buffer = evt.target?.result as ArrayBuffer;
+        const wb = XLSX.read(buffer, { type: 'array' });
+        const firstSheetName = wb.SheetNames[0];
+        if (!firstSheetName) throw new Error('El archivo no contiene hojas válidas.');
+        const sheet = wb.Sheets[firstSheetName];
+        const rawJson: any[] = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+
+        if (rawJson.length === 0) {
+          alert('El archivo Excel está vacío o no contiene filas con datos.');
+          return;
+        }
+
+        const existingDnis = new Set(students.filter((s) => s.dni).map((s) => String(s.dni).trim()));
+        const existingCodes = new Set(students.map((s) => String(s.codigo).trim().toUpperCase()));
+        const seenDnis = new Set<string>();
+        const seenCodes = new Set<string>();
+
+        const parsed = rawJson.map((row, idx) => {
+          // Normalización flexible de nombres de columnas
+          const findVal = (keys: string[]) => {
+            for (const k of Object.keys(row)) {
+              const clean = k.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+              if (keys.some((target) => clean.includes(target))) {
+                return String(row[k]).trim();
+              }
+            }
+            return '';
+          };
+
+          const nom = findVal(['nombre']);
+          const ape = findVal(['apellido']);
+          const dniVal = findVal(['dni', 'documento', 'identidad']);
+          const codVal = findVal(['codigo', 'cod']);
+
+          let errorMsg = '';
+          if (!nom || !ape) {
+            errorMsg = 'Nombres y apellidos son obligatorios.';
+          } else if (dniVal) {
+            if (!/^\d{8}$/.test(dniVal)) {
+              errorMsg = `DNI "${dniVal}" inválido (debe tener exactamente 8 dígitos).`;
+            } else if (seenDnis.has(dniVal)) {
+              errorMsg = `DNI "${dniVal}" repetido en la fila previa del archivo.`;
+            } else if (existingDnis.has(dniVal)) {
+              errorMsg = `Ya existe un estudiante en el sistema con el DNI "${dniVal}".`;
+            }
+          }
+
+          if (!errorMsg && codVal) {
+            const upperCod = codVal.toUpperCase();
+            if (seenCodes.has(upperCod)) {
+              errorMsg = `Código "${upperCod}" repetido en el archivo.`;
+            } else if (existingCodes.has(upperCod)) {
+              errorMsg = `Código "${upperCod}" ya existe en tus estudiantes.`;
+            }
+          }
+
+          if (dniVal) seenDnis.add(dniVal);
+          if (codVal) seenCodes.add(codVal.toUpperCase());
+
+          return {
+            id: idx + 1,
+            nombres: nom,
+            apellidos: ape,
+            dni: dniVal,
+            codigo: codVal,
+            status: (errorMsg ? 'ERROR' : 'VALID') as 'VALID' | 'ERROR',
+            error: errorMsg || undefined,
+          };
+        });
+
+        setParsedRows(parsed);
+        setImportStep('preview');
+      } catch (err: any) {
+        alert('Error al leer el archivo Excel: ' + (err.message || 'Formato no compatible'));
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  function handleRemovePreviewRow(id: number) {
+    setParsedRows((prev) => prev.filter((r) => r.id !== id));
+  }
+
+  async function handleConfirmImport() {
+    const validRows = parsedRows.filter((r) => r.status === 'VALID');
+    if (validRows.length === 0) {
+      alert('No hay estudiantes válidos para importar. Corrija los errores del archivo.');
+      return;
+    }
+    if (!importAulaId) {
+      alert('Debe seleccionar un aula de destino para los estudiantes.');
+      return;
+    }
+
+    setImporting(true);
+    try {
+      const res = await api.importDocenteEstudiantesBatch(
+        Number(importAulaId),
+        validRows.map((r) => ({
+          nombres: r.nombres,
+          apellidos: r.apellidos,
+          dni: r.dni || undefined,
+          codigo: r.codigo || undefined,
+        }))
+      );
+
+      if (res.success) {
+        setImportResults(res);
+        setImportStep('success');
+        onStudentCreated();
+      } else {
+        alert(res.message || 'Error al guardar los estudiantes en la base de datos.');
+      }
+    } catch {
+      alert('Error de conexión al importar estudiantes.');
+    } finally {
+      setImporting(false);
+    }
+  }
+
+  // Regeneración y copia de código de vinculación
+  async function handleRegenerateCode(student: any) {
+    if (!window.confirm(`¿Desea generar un nuevo código de vinculación para ${student.nombres} ${student.apellidos}? El código anterior quedará invalidado.`)) {
+      return;
+    }
+    try {
+      const res = await api.regenerateDocenteEstudianteCodigo(student.id);
+      if (res.success && res.data) {
+        onStudentCreated();
+        alert(`¡Código regenerado exitosamente!\n\nNuevo código: ${res.data.codigo}`);
+      } else {
+        alert(res.message || 'No se pudo regenerar el código.');
+      }
+    } catch {
+      alert('Error al regenerar código de vinculación.');
+    }
+  }
+
+  function handleCopyCode(code: string, id: number) {
+    if (!code) return;
+    navigator.clipboard.writeText(code);
+    setCopiedCodeId(id);
+    setTimeout(() => setCopiedCodeId(null), 2000);
+  }
+
+  // Edición y eliminación
+  function openEditModal(student: any) {
+    setEditStudentId(student.id);
+    setEditNombres(student.nombres || '');
+    setEditApellidos(student.apellidos || '');
+    setEditDni(student.dni || '');
+    setEditCodigo(student.codigo || '');
+    setEditAulaId(student.aula_id ? String(student.aula_id) : '');
+    setEditColorAvatar(student.color_avatar || '#D9C8EF');
+    setEditErr('');
+    setShowEditModal(true);
+  }
+
+  async function handleSaveEdit(e: FormEvent) {
+    e.preventDefault();
+    if (!editStudentId) return;
+    setEditErr('');
+    setSavingEdit(true);
+    try {
+      const res = await api.updateDocenteEstudiante(editStudentId, {
+        nombres: editNombres,
+        apellidos: editApellidos,
+        dni: editDni || undefined,
+        codigo: editCodigo || undefined,
+        aulaId: editAulaId ? Number(editAulaId) : null,
+        colorAvatar: editColorAvatar,
+      });
+      if (res.success) {
+        setShowEditModal(false);
+        onStudentCreated();
+      } else {
+        setEditErr(res.message || 'No se pudo actualizar el estudiante.');
+      }
+    } finally {
+      setSavingEdit(false);
+    }
+  }
+
+  async function handleDeleteStudent(student: any) {
+    if (!window.confirm(`¿Está seguro de eliminar al estudiante "${student.nombres} ${student.apellidos}"? Se eliminarán también sus evaluaciones y códigos asociados.`)) {
+      return;
+    }
+    try {
+      const res = await api.deleteDocenteEstudiante(student.id);
+      if (res.success) {
+        onStudentCreated();
+      } else {
+        alert(res.message || 'No se pudo eliminar el estudiante.');
+      }
+    } catch {
+      alert('Error al eliminar estudiante.');
+    }
+  }
+
   async function handleAddStudent(e: React.FormEvent) {
     e.preventDefault();
     setAddErr('');
@@ -807,7 +1141,7 @@ function StudentsPage({
         nombres,
         apellidos,
         dni: dni || undefined,
-        codigo,
+        codigo: codigo || undefined,
         aulaId: newAulaId ? Number(newAulaId) : null,
         colorAvatar,
       });
@@ -833,8 +1167,24 @@ function StudentsPage({
 
   return (
     <>
-      <PageHeader title="Estudiantes" subtitle="Consulta el progreso individual y los criterios que requieren apoyo">
-        <Button icon="plus" onClick={() => setShowAddModal(true)}>Agregar estudiante</Button>
+      <PageHeader title="Estudiantes" subtitle="Gestión individual y masiva con códigos seguros de vinculación familiar">
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+          <Button icon="plus" onClick={() => setShowAddModal(true)}>
+            Agregar estudiante
+          </Button>
+          <button
+            type="button"
+            className="btn secondary"
+            onClick={() => {
+              setParsedRows([]);
+              setImportStep('upload');
+              setShowImportModal(true);
+            }}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+          >
+            <Icon name="file" size={16} /> Importar estudiantes (Excel)
+          </button>
+        </div>
       </PageHeader>
 
       {alertFilterIds && (
@@ -852,7 +1202,7 @@ function StudentsPage({
         <div className="search-box">
           <Icon name="search" size={18} />
           <input
-            placeholder="Buscar estudiante por nombre o código..."
+            placeholder="Buscar estudiante por nombre, código o DNI..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -872,6 +1222,18 @@ function StudentsPage({
           <Icon name="chevron" size={15} />
         </label>
         <span className="records">{filteredStudents.length} estudiante(s)</span>
+
+        {filteredStudents.length > 0 && (
+          <button
+            type="button"
+            className="btn ghost"
+            onClick={() => downloadLinkingCodesReport(filteredStudents, selectedAulaId === 'ALL' ? 'todas_las_aulas' : `aula_${selectedAulaId}`)}
+            title="Descargar lista completa de códigos de vinculación para apoderados"
+            style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '5px', fontSize: '12px' }}
+          >
+            <Icon name="download" size={15} /> Exportar códigos (.xlsx)
+          </button>
+        )}
       </div>
 
       <div className="student-layout">
@@ -887,14 +1249,58 @@ function StudentsPage({
           <aside className="student-profile">
             <div className="profile-head">
               <Avatar student={activeStudent} size="lg" />
-              <div>
-                <h2>{getStudentFullName(activeStudent)}</h2>
-                <p>{getStudentClassroomLabel(activeStudent)} · {activeStudent.codigo}</p>
-                {activeStudent.codigo_vinculacion_apoderado && (
-                  <small style={{ fontSize: '9px', color: '#7041B5', fontWeight: 700 }}>
-                    Código apoderado: {activeStudent.codigo_vinculacion_apoderado}
-                  </small>
-                )}
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <h2>{getStudentFullName(activeStudent)}</h2>
+                  <div style={{ display: 'flex', gap: '4px' }}>
+                    <button
+                      type="button"
+                      title="Editar datos"
+                      onClick={() => openEditModal(activeStudent)}
+                      style={{ background: 'none', border: '1px solid #E9E5EF', borderRadius: '6px', padding: '4px 6px', color: '#7041B5', cursor: 'pointer' }}
+                    >
+                      <Icon name="edit" size={14} />
+                    </button>
+                    <button
+                      type="button"
+                      title="Eliminar estudiante"
+                      onClick={() => handleDeleteStudent(activeStudent)}
+                      style={{ background: 'none', border: '1px solid #E9E5EF', borderRadius: '6px', padding: '4px 6px', color: '#D9534F', cursor: 'pointer' }}
+                    >
+                      <Icon name="close" size={14} />
+                    </button>
+                  </div>
+                </div>
+                <p>{getStudentClassroomLabel(activeStudent)} · {activeStudent.codigo} {activeStudent.dni ? `· DNI: ${activeStudent.dni}` : ''}</p>
+
+                {/* Código de vinculación familiar para apoderados */}
+                <div style={{ marginTop: '8px', padding: '8px 10px', background: '#F6F2FC', borderRadius: '8px', border: '1px dashed #C3ADE3' }}>
+                  <span style={{ fontSize: '10px', color: '#7041B5', fontWeight: 600, display: 'block' }}>
+                    Código de Vinculación para Apoderado:
+                  </span>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '3px' }}>
+                    <code style={{ fontSize: '12px', fontWeight: 700, color: '#29243A', letterSpacing: '0.5px' }}>
+                      {activeStudent.codigo_vinculacion_apoderado || 'Sin código'}
+                    </code>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <button
+                        type="button"
+                        onClick={() => handleCopyCode(activeStudent.codigo_vinculacion_apoderado, activeStudent.id)}
+                        style={{ background: '#fff', border: '1px solid #DDD7E3', borderRadius: '5px', padding: '2px 7px', fontSize: '10px', cursor: 'pointer', color: copiedCodeId === activeStudent.id ? '#2E7D32' : '#7041B5', fontWeight: 600 }}
+                      >
+                        {copiedCodeId === activeStudent.id ? '✓ Copiado' : 'Copiar'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRegenerateCode(activeStudent)}
+                        style={{ background: '#fff', border: '1px solid #DDD7E3', borderRadius: '5px', padding: '2px 7px', fontSize: '10px', cursor: 'pointer', color: '#6A637A' }}
+                        title="Generar nuevo código aleatorio (el anterior dejará de ser válido)"
+                      >
+                        Regenerar
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -988,31 +1394,32 @@ function StudentsPage({
         )}
       </div>
 
+      {/* Modal 1: Agregar Estudiante Individual */}
       {showAddModal && (
         <div className="modal-backdrop">
           <div className="comparison-modal" style={{ maxWidth: '500px' }}>
             <button type="button" className="modal-close" onClick={() => setShowAddModal(false)}>✕</button>
             <span className="badge purple">Nuevo estudiante</span>
             <h1 style={{ fontSize: '20px' }}>Registrar estudiante en aula</h1>
-            <p className="modal-subtitle">Se generará automáticamente su código de vinculación para apoderados.</p>
+            <p className="modal-subtitle">Se generará automáticamente un código único y seguro para su apoderado.</p>
             {addErr && <div className="auth-alert error" style={{ marginTop: '12px' }}>{addErr}</div>}
             <form onSubmit={handleAddStudent} style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div className="form-grid">
                 <label>
                   Nombres
-                  <input value={nombres} onChange={(e) => setNombres(e.target.value)} required style={{ height: '40px', borderRadius: '8px', border: '1px solid #DDD7E3', padding: '0 10px' }} />
+                  <input value={nombres} onChange={(e) => setNombres(e.target.value)} required placeholder="Ej. Ana Lucía" style={{ height: '40px', borderRadius: '8px', border: '1px solid #DDD7E3', padding: '0 10px' }} />
                 </label>
                 <label>
                   Apellidos
-                  <input value={apellidos} onChange={(e) => setApellidos(e.target.value)} required style={{ height: '40px', borderRadius: '8px', border: '1px solid #DDD7E3', padding: '0 10px' }} />
-                </label>
-                <label>
-                  Código único (Ej. AV-03-009)
-                  <input value={codigo} onChange={(e) => setCodigo(e.target.value)} required style={{ height: '40px', borderRadius: '8px', border: '1px solid #DDD7E3', padding: '0 10px' }} />
+                  <input value={apellidos} onChange={(e) => setApellidos(e.target.value)} required placeholder="Ej. Ramos Mendoza" style={{ height: '40px', borderRadius: '8px', border: '1px solid #DDD7E3', padding: '0 10px' }} />
                 </label>
                 <label>
                   DNI (opcional, 8 dígitos)
-                  <input value={dni} onChange={(e) => setDni(e.target.value)} maxLength={8} style={{ height: '40px', borderRadius: '8px', border: '1px solid #DDD7E3', padding: '0 10px' }} />
+                  <input value={dni} onChange={(e) => setDni(e.target.value)} maxLength={8} placeholder="8 dígitos" style={{ height: '40px', borderRadius: '8px', border: '1px solid #DDD7E3', padding: '0 10px' }} />
+                </label>
+                <label>
+                  Código (opcional, ej. EST-009)
+                  <input value={codigo} onChange={(e) => setCodigo(e.target.value)} placeholder="Auto si está vacío" style={{ height: '40px', borderRadius: '8px', border: '1px solid #DDD7E3', padding: '0 10px' }} />
                 </label>
                 <label>
                   Aula asignada
@@ -1039,6 +1446,255 @@ function StudentsPage({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal 2: Editar Estudiante */}
+      {showEditModal && (
+        <div className="modal-backdrop">
+          <div className="comparison-modal" style={{ maxWidth: '500px' }}>
+            <button type="button" className="modal-close" onClick={() => setShowEditModal(false)}>✕</button>
+            <span className="badge purple">Editar estudiante</span>
+            <h1 style={{ fontSize: '20px' }}>Actualizar información</h1>
+            {editErr && <div className="auth-alert error" style={{ marginTop: '12px' }}>{editErr}</div>}
+            <form onSubmit={handleSaveEdit} style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div className="form-grid">
+                <label>
+                  Nombres
+                  <input value={editNombres} onChange={(e) => setEditNombres(e.target.value)} required style={{ height: '40px', borderRadius: '8px', border: '1px solid #DDD7E3', padding: '0 10px' }} />
+                </label>
+                <label>
+                  Apellidos
+                  <input value={editApellidos} onChange={(e) => setEditApellidos(e.target.value)} required style={{ height: '40px', borderRadius: '8px', border: '1px solid #DDD7E3', padding: '0 10px' }} />
+                </label>
+                <label>
+                  DNI (8 dígitos)
+                  <input value={editDni} onChange={(e) => setEditDni(e.target.value)} maxLength={8} style={{ height: '40px', borderRadius: '8px', border: '1px solid #DDD7E3', padding: '0 10px' }} />
+                </label>
+                <label>
+                  Código
+                  <input value={editCodigo} onChange={(e) => setEditCodigo(e.target.value)} required style={{ height: '40px', borderRadius: '8px', border: '1px solid #DDD7E3', padding: '0 10px' }} />
+                </label>
+                <label>
+                  Aula
+                  <select value={editAulaId} onChange={(e) => setEditAulaId(e.target.value)} style={{ height: '40px', borderRadius: '8px', border: '1px solid #DDD7E3', padding: '0 10px' }}>
+                    <option value="">Sin aula asignada</option>
+                    {aulas.map((a) => (
+                      <option key={a.id} value={String(a.id)}>{a.grado} {a.seccion}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Color de avatar
+                  <select value={editColorAvatar} onChange={(e) => setEditColorAvatar(e.target.value)} style={{ height: '40px', borderRadius: '8px', border: '1px solid #DDD7E3', padding: '0 10px' }}>
+                    <option value="#D9C8EF">Lila</option>
+                    <option value="#BEE3D0">Menta</option>
+                    <option value="#C8D9F5">Celeste</option>
+                    <option value="#F4C6A6">Durazno</option>
+                  </select>
+                </label>
+              </div>
+              <div className="modal-actions">
+                <button type="button" className="btn secondary" onClick={() => setShowEditModal(false)}>Cancelar</button>
+                <button type="submit" className="btn primary" disabled={savingEdit}>
+                  {savingEdit ? 'Actualizando...' : 'Guardar cambios'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal 3: Importación Masiva Excel */}
+      {showImportModal && (
+        <div className="modal-backdrop">
+          <div className="comparison-modal" style={{ maxWidth: '680px', width: '90%' }}>
+            <button type="button" className="modal-close" onClick={() => setShowImportModal(false)}>✕</button>
+            <span className="badge purple">Importación Masiva</span>
+            <h1 style={{ fontSize: '20px' }}>Importar estudiantes desde Excel</h1>
+            <p className="modal-subtitle">
+              Carga tu nómina de estudiantes en un aula. Se generarán códigos únicos de vinculación familiar para cada uno.
+            </p>
+
+            {importStep === 'upload' && (
+              <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                  <label style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '11px', fontWeight: 600 }}>
+                    Aula de destino
+                    <select
+                      value={importAulaId}
+                      onChange={(e) => setImportAulaId(e.target.value)}
+                      style={{ height: '42px', borderRadius: '8px', border: '1px solid #DDD7E3', padding: '0 12px' }}
+                    >
+                      {aulas.map((a) => (
+                        <option key={a.id} value={String(a.id)}>
+                          {a.grado} {a.seccion} ({a.nivel || 'Primaria'})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    className="btn secondary"
+                    onClick={downloadStudentTemplate}
+                    style={{ height: '42px', alignSelf: 'flex-end', display: 'flex', alignItems: 'center', gap: '6px' }}
+                  >
+                    <Icon name="download" size={16} /> Descargar plantilla Excel
+                  </button>
+                </div>
+
+                <div
+                  style={{
+                    border: '2px dashed #C3ADE3',
+                    borderRadius: '12px',
+                    padding: '36px 20px',
+                    textAlign: 'center',
+                    background: '#FAF7FE',
+                    cursor: 'pointer',
+                  }}
+                  onClick={() => document.getElementById('excelFileInput')?.click()}
+                >
+                  <div style={{ display: 'inline-flex', padding: '14px', background: '#F2EDFA', borderRadius: '50%', color: '#7041B5', marginBottom: '8px' }}>
+                    <Icon name="file" size={28} />
+                  </div>
+                  <strong style={{ display: 'block', fontSize: '14px', color: '#29243A' }}>
+                    Selecciona o arrastra el archivo Excel (.xlsx)
+                  </strong>
+                  <span style={{ fontSize: '11px', color: '#766F87', marginTop: '4px', display: 'block' }}>
+                    Columnas requeridas: Nombres, Apellidos. Opcionales: DNI (8 dígitos), Código.
+                  </span>
+                  <input
+                    id="excelFileInput"
+                    type="file"
+                    accept=".xlsx, .xls"
+                    style={{ display: 'none' }}
+                    onChange={handleExcelUpload}
+                  />
+                  <button type="button" className="btn secondary" style={{ marginTop: '14px' }}>
+                    Elegir archivo
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {importStep === 'preview' && (
+              <div style={{ marginTop: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <div>
+                    <strong style={{ fontSize: '13px' }}>Archivo: {importFileName}</strong>
+                    <p style={{ margin: '2px 0 0', fontSize: '11px', color: '#766F87' }}>
+                      Revisa los registros antes de guardar. Corrige los que presenten errores.
+                    </p>
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <span className="badge green">
+                      {parsedRows.filter((r) => r.status === 'VALID').length} válidos
+                    </span>
+                    {parsedRows.some((r) => r.status === 'ERROR') && (
+                      <span className="badge red">
+                        {parsedRows.filter((r) => r.status === 'ERROR').length} con error
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div style={{ maxHeight: '300px', overflowY: 'auto', border: '1px solid #E9E5EF', borderRadius: '8px' }}>
+                  <table style={{ width: '100%', fontSize: '12px', borderCollapse: 'collapse' }}>
+                    <thead style={{ background: '#FAF7FE', borderBottom: '1px solid #E9E5EF' }}>
+                      <tr>
+                        <th style={{ padding: '8px 10px', textAlign: 'left' }}>#</th>
+                        <th style={{ padding: '8px 10px', textAlign: 'left' }}>Nombres</th>
+                        <th style={{ padding: '8px 10px', textAlign: 'left' }}>Apellidos</th>
+                        <th style={{ padding: '8px 10px', textAlign: 'left' }}>DNI</th>
+                        <th style={{ padding: '8px 10px', textAlign: 'left' }}>Código</th>
+                        <th style={{ padding: '8px 10px', textAlign: 'left' }}>Estado</th>
+                        <th style={{ padding: '8px 10px', textAlign: 'center' }}>Quitar</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {parsedRows.map((r) => (
+                        <tr key={r.id} style={{ borderBottom: '1px solid #F2EEF7', background: r.status === 'ERROR' ? '#FFF5F5' : undefined }}>
+                          <td style={{ padding: '8px 10px' }}>{r.id}</td>
+                          <td style={{ padding: '8px 10px' }}><strong>{r.nombres}</strong></td>
+                          <td style={{ padding: '8px 10px' }}>{r.apellidos}</td>
+                          <td style={{ padding: '8px 10px', fontFamily: 'monospace' }}>{r.dni || '—'}</td>
+                          <td style={{ padding: '8px 10px', fontFamily: 'monospace' }}>{r.codigo || '(Auto)'}</td>
+                          <td style={{ padding: '8px 10px' }}>
+                            {r.status === 'VALID' ? (
+                              <span className="badge green">Listo</span>
+                            ) : (
+                              <span className="badge red" title={r.error}>
+                                {r.error}
+                              </span>
+                            )}
+                          </td>
+                          <td style={{ padding: '8px 10px', textAlign: 'center' }}>
+                            <button
+                              type="button"
+                              onClick={() => handleRemovePreviewRow(r.id)}
+                              style={{ background: 'none', border: 'none', color: '#D9534F', cursor: 'pointer', fontSize: '14px' }}
+                              title="Eliminar de la importación"
+                            >
+                              ✕
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="modal-actions" style={{ marginTop: '20px' }}>
+                  <button type="button" className="btn secondary" onClick={() => setImportStep('upload')}>
+                    Volver a subir
+                  </button>
+                  <button
+                    type="button"
+                    className="btn primary"
+                    onClick={handleConfirmImport}
+                    disabled={importing || parsedRows.filter((r) => r.status === 'VALID').length === 0}
+                  >
+                    {importing ? 'Importando en PostgreSQL...' : `Confirmar e importar (${parsedRows.filter((r) => r.status === 'VALID').length})`}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {importStep === 'success' && importResults && (
+              <div style={{ marginTop: '20px', textAlign: 'center' }}>
+                <div style={{ display: 'inline-flex', padding: '16px', background: '#E8F5E9', borderRadius: '50%', color: '#2E7D32', marginBottom: '12px' }}>
+                  <Icon name="check" size={36} />
+                </div>
+                <h2 style={{ fontSize: '18px', color: '#29243A', margin: '0 0 6px' }}>
+                  ¡Importación completada exitosamente!
+                </h2>
+                <p style={{ fontSize: '13px', color: '#766F87', margin: '0 0 16px' }}>
+                  Se registraron <b>{importResults.registradosCount}</b> estudiante(s) en el aula <b>{importResults.aula}</b>.
+                </p>
+
+                <div style={{ maxHeight: '200px', overflowY: 'auto', textAlign: 'left', border: '1px solid #E9E5EF', borderRadius: '8px', padding: '10px', background: '#FAF7FE' }}>
+                  {importResults.registrados?.map((st: any) => (
+                    <div key={st.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #ECE7F5', fontSize: '12px' }}>
+                      <span><strong>{st.nombres} {st.apellidos}</strong> ({st.codigo})</span>
+                      <code style={{ color: '#7041B5', fontWeight: 700 }}>{st.codigo_vinculacion_apoderado}</code>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="modal-actions" style={{ marginTop: '22px', justifyContent: 'center' }}>
+                  <Button
+                    icon="download"
+                    onClick={() => downloadLinkingCodesReport(importResults.registrados, `importados_${importResults.aula}`)}
+                  >
+                    Descargar reporte con códigos (.xlsx)
+                  </Button>
+                  <button type="button" className="btn secondary" onClick={() => setShowImportModal(false)}>
+                    Cerrar
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -169,6 +169,14 @@ export const api = {
     return res.json();
   },
 
+  async deleteDocenteAula(id: number): Promise<{ success: boolean; message?: string }> {
+    const res = await fetch(`${API_BASE}/docente/aulas/${id}`, {
+      method: 'DELETE',
+      headers: { ...getAuthHeader() },
+    });
+    return res.json();
+  },
+
   async getDocenteEstudiantes(aulaId?: number): Promise<{ success: boolean; data?: any[]; message?: string }> {
     const url = aulaId ? `${API_BASE}/docente/estudiantes?aulaId=${aulaId}` : `${API_BASE}/docente/estudiantes`;
     const res = await fetch(url, {
@@ -195,7 +203,7 @@ export const api = {
     nombres: string;
     apellidos: string;
     dni?: string;
-    codigo: string;
+    codigo?: string;
     aulaId?: number | null;
     colorAvatar?: string;
   }): Promise<{ success: boolean; data?: any; message?: string }> {
@@ -203,6 +211,60 @@ export const api = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
       body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+
+  async importDocenteEstudiantesBatch(aulaId: number, estudiantes: any[]): Promise<{
+    success: boolean;
+    aula?: string;
+    totalProcesados?: number;
+    registradosCount?: number;
+    rechazadosCount?: number;
+    registrados?: any[];
+    rechazados?: any[];
+    message?: string;
+  }> {
+    const res = await fetch(`${API_BASE}/docente/estudiantes/batch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: JSON.stringify({ aulaId, estudiantes }),
+    });
+    return res.json();
+  },
+
+  async regenerateDocenteEstudianteCodigo(estudianteId: number): Promise<{
+    success: boolean;
+    data?: { estudianteId: number; codigo: string; estudianteNombre: string };
+    message?: string;
+  }> {
+    const res = await fetch(`${API_BASE}/docente/estudiantes/${estudianteId}/regenerar-codigo`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+    });
+    return res.json();
+  },
+
+  async updateDocenteEstudiante(id: number, data: {
+    nombres: string;
+    apellidos: string;
+    dni?: string;
+    codigo?: string;
+    aulaId?: number | null;
+    colorAvatar?: string;
+  }): Promise<{ success: boolean; data?: any; message?: string }> {
+    const res = await fetch(`${API_BASE}/docente/estudiantes/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+
+  async deleteDocenteEstudiante(id: number): Promise<{ success: boolean; message?: string }> {
+    const res = await fetch(`${API_BASE}/docente/estudiantes/${id}`, {
+      method: 'DELETE',
+      headers: { ...getAuthHeader() },
     });
     return res.json();
   },

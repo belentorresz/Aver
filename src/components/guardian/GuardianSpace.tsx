@@ -28,24 +28,16 @@ export function GuardianSpace() {
         setSelectedStudent(res.data[0]);
         loadStudentDetails(res.data[0].id);
       } else {
-        // Estudiante demo si no hay vinculaciones todavía
-        const fallbackStudent = {
-          id: 1,
-          nombres: 'Juan',
-          apellidos: 'Pérez',
-          grado: '3.º grado',
-          seccion: 'A',
-          docente_nombres: 'María Elena',
-          docente_apellidos: 'Salazar Gómez',
-          institucion_educativa: 'I.E. 2084 San Lorenzo',
-          color_avatar: '#F4C6A6',
-          codigo: 'AV-03-001',
-        };
-        setStudents([fallbackStudent]);
-        setSelectedStudent(fallbackStudent);
+        // Para un apoderado nuevo: Su portal debe aparecer vacío mientras no haya vinculado a un estudiante
+        setStudents([]);
+        setSelectedStudent(null);
+        setAcademicData(null);
       }
     } catch (err) {
       console.error('Error al cargar estudiantes:', err);
+      setStudents([]);
+      setSelectedStudent(null);
+      setAcademicData(null);
     } finally {
       setLoading(false);
     }
@@ -56,9 +48,12 @@ export function GuardianSpace() {
       const res = await api.getStudentDetails(studentId);
       if (res.success && res.data) {
         setAcademicData(res.data);
+      } else {
+        setAcademicData(null);
       }
     } catch (e) {
-      console.warn('Usando datos de consulta locales');
+      console.warn('No se pudieron obtener detalles académicos del estudiante.');
+      setAcademicData(null);
     }
   }
 
@@ -91,6 +86,33 @@ export function GuardianSpace() {
   }
 
   const apoderadoName = user?.apoderado ? `${user.apoderado.nombres} ${user.apoderado.apellidos}` : 'Apoderado AVer';
+
+  const evaluaciones = academicData?.evaluaciones || [];
+  const alertas = academicData?.alertas || [];
+  const recomendaciones = academicData?.recomendaciones || [];
+
+  const totalEvaluaciones = evaluaciones.length;
+  const logradosCount = evaluaciones.filter((ev: any) => ev.marca === 'LOGRADO' || ev.nivel_logro === 'AD' || ev.nivel_logro === 'A').length;
+  const logradosPct = totalEvaluaciones > 0 ? Math.round((logradosCount / totalEvaluaciones) * 100) : 0;
+  const atencionCount = evaluaciones.filter((ev: any) => ev.marca === 'NO_LOGRADO' || ev.nivel_logro === 'C').length;
+
+  let nivelGlobal = 'Sin evaluaciones';
+  let nivelSub = 'Esperando primer registro del docente';
+  if (totalEvaluaciones > 0) {
+    if (logradosPct >= 85) {
+      nivelGlobal = 'Logro Destacado (AD)';
+      nivelSub = `${logradosPct}% de criterios logrados con nivel sobresaliente`;
+    } else if (logradosPct >= 65) {
+      nivelGlobal = 'Logro Esperado (A)';
+      nivelSub = `${logradosPct}% de criterios logrados satisfactoriamente`;
+    } else if (logradosPct >= 40) {
+      nivelGlobal = 'En Proceso (B)';
+      nivelSub = `${logradosPct}% de avance en competencias evaluadas`;
+    } else {
+      nivelGlobal = 'En Inicio / Apoyo (C)';
+      nivelSub = `Requiere refuerzo en ${atencionCount} criterio(s)`;
+    }
+  }
 
   return (
     <div className="guardian-app-shell">
@@ -132,7 +154,7 @@ export function GuardianSpace() {
           )}
 
           <button className="btn secondary link-student-btn" onClick={() => setShowLinkModal(true)}>
-            + Vincular otro estudiante
+            + Vincular estudiante
           </button>
 
           <div className="divider" />
@@ -162,28 +184,28 @@ export function GuardianSpace() {
             <div className="guardian-hero-card">
               <div className="student-profile-badge">
                 <span className="avatar lg" style={{ background: selectedStudent.color_avatar || '#D9C8EF' }}>
-                  {selectedStudent.nombres[0]}{selectedStudent.apellidos[0]}
+                  {(selectedStudent.nombres || 'E')[0]}{(selectedStudent.apellidos || 'S')[0]}
                 </span>
                 <div className="student-meta">
                   <span className="badge green">Estudiante Vinculado</span>
                   <h1>{selectedStudent.nombres} {selectedStudent.apellidos}</h1>
                   <p>
-                    {selectedStudent.grado} {selectedStudent.seccion} · Código: {selectedStudent.codigo} · {selectedStudent.institucion_educativa || 'I.E. 2084 San Lorenzo'}
+                    {selectedStudent.grado ? `${selectedStudent.grado} ${selectedStudent.seccion}` : 'Aula asignada'} · Código: {selectedStudent.codigo} {selectedStudent.institucion_educativa ? `· ${selectedStudent.institucion_educativa}` : ''}
                   </p>
                   <small>
-                    Docente responsable: Prof. {selectedStudent.docente_nombres || 'María Elena'} {selectedStudent.docente_apellidos || 'Salazar Gómez'}
+                    Docente responsable: Prof. {selectedStudent.docente_nombres || 'Docente'} {selectedStudent.docente_apellidos || ''}
                   </small>
                 </div>
               </div>
 
               <div className="guardian-status-box">
                 <span className="kpi-label">Nivel de Logro Global</span>
-                <span className="kpi-val highlight">Logro Esperado (A)</span>
-                <span className="kpi-sub">+12% de avance en el último bimestre</span>
+                <span className="kpi-val highlight">{nivelGlobal}</span>
+                <span className="kpi-sub">{nivelSub}</span>
               </div>
             </div>
 
-            {/* Tarjetas de Resumen Rápido */}
+            {/* Tarjetas de Resumen Rápido con datos reales */}
             <div className="summary-grid">
               <div className="summary-card">
                 <div className="summary-icon purple">
@@ -192,9 +214,9 @@ export function GuardianSpace() {
                   </svg>
                 </div>
                 <div>
-                  <span>Evaluaciones en curso</span>
-                  <strong>8 registros</strong>
-                  <small>Actualizado hoy</small>
+                  <span>Evaluaciones registradas</span>
+                  <strong>{totalEvaluaciones} registro(s)</strong>
+                  <small>{totalEvaluaciones > 0 ? 'En PostgreSQL' : 'Sin registros aún'}</small>
                 </div>
               </div>
 
@@ -206,8 +228,8 @@ export function GuardianSpace() {
                 </div>
                 <div>
                   <span>Criterios logrados</span>
-                  <strong>6 de 8</strong>
-                  <small>75% cumplimiento</small>
+                  <strong>{logradosCount} de {totalEvaluaciones}</strong>
+                  <small>{logradosPct}% de cumplimiento</small>
                 </div>
               </div>
 
@@ -219,8 +241,8 @@ export function GuardianSpace() {
                 </div>
                 <div>
                   <span>Puntos de atención</span>
-                  <strong>1 criterio</strong>
-                  <small>Lectura: ideas principales</small>
+                  <strong>{atencionCount} criterio(s)</strong>
+                  <small>{atencionCount > 0 ? 'Requieren refuerzo' : 'Sin alertas pedagógicas'}</small>
                 </div>
               </div>
 
@@ -231,9 +253,9 @@ export function GuardianSpace() {
                   </svg>
                 </div>
                 <div>
-                  <span>Asistencia escolar</span>
-                  <strong>94% regular</strong>
-                  <small>Bimestre II - 2025</small>
+                  <span>Recomendaciones activas</span>
+                  <strong>{recomendaciones.length + alertas.length} orientaciones</strong>
+                  <small>Para apoyo en casa</small>
                 </div>
               </div>
             </div>
@@ -244,10 +266,10 @@ export function GuardianSpace() {
                 Progreso y Criterios
               </button>
               <button className={activeTab === 'evaluaciones' ? 'active' : ''} onClick={() => setActiveTab('evaluaciones')}>
-                Historial de Evaluaciones
+                Historial de Evaluaciones ({evaluaciones.length})
               </button>
               <button className={activeTab === 'alertas' ? 'active' : ''} onClick={() => setActiveTab('alertas')}>
-                Recomendaciones y Apoyo en Casa
+                Recomendaciones y Apoyo en Casa ({recomendaciones.length + alertas.length})
               </button>
               <button className={activeTab === 'agenda' ? 'active' : ''} onClick={() => setActiveTab('agenda')}>
                 Agenda Compartida
@@ -260,61 +282,57 @@ export function GuardianSpace() {
                 <section className="card chart-card wide">
                   <div className="card-heading">
                     <div>
-                      <h2>Evolución del Desempeño Escolar</h2>
-                      <p>Visualización del progreso en Comunicación y Matemática</p>
+                      <h2>Desempeño en Evaluaciones Curriculares</h2>
+                      <p>Resultados oficiales registrados y validados por el docente en el aula</p>
                     </div>
-                    <span className="badge green">Tendencia Positiva</span>
+                    <span className={`badge ${logradosPct >= 65 ? 'green' : logradosPct >= 40 ? 'yellow' : 'red'}`}>
+                      {totalEvaluaciones > 0 ? `${logradosPct}% Logro` : 'Sin datos'}
+                    </span>
                   </div>
-                  <div className="progress-panel large" style={{ margin: '20px 0' }}>
-                    <svg viewBox="0 0 600 140" style={{ width: '100%', height: 'auto' }}>
-                      <defs>
-                        <linearGradient id="guardianFade" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0" stopColor="#7041B5" stopOpacity=".25"/>
-                          <stop offset="1" stopColor="#7041B5" stopOpacity="0"/>
-                        </linearGradient>
-                      </defs>
-                      <path d="M20 110 L140 100 L280 80 L420 85 L560 45 L560 135 L20 135 Z" fill="url(#guardianFade)"/>
-                      <path d="M20 110 L140 100 L280 80 L420 85 L560 45" fill="none" stroke="#7041B5" strokeWidth="4"/>
-                      {[[20,110],[140,100],[280,80],[420,85],[560,45]].map(([x,y]) => (
-                        <circle key={x} cx={x} cy={y} r="6" fill="#fff" stroke="#7041B5" strokeWidth="3"/>
-                      ))}
-                    </svg>
-                    <div className="months">
-                      <span>Marzo</span>
-                      <span>Abril</span>
-                      <span>Mayo</span>
-                      <span>Junio</span>
-                      <span>Julio</span>
+
+                  {evaluaciones.length === 0 ? (
+                    <div style={{ padding: '36px', textAlign: 'center', color: '#766F87', fontSize: '13px' }}>
+                      Aún no hay evaluaciones registradas en el sistema para este estudiante.
                     </div>
-                  </div>
-                  <div className="info-callout">
-                    <div>
-                      <strong>Nota pedagógica del docente</strong>
-                      <span>El estudiante ha demostrado una destacada recuperación en resolución de problemas numéricos. Se recomienda afianzar la comprensión lectora en casa.</span>
+                  ) : (
+                    <div className="criteria-list" style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                      {evaluaciones.map((ev: any, idx: number) => {
+                        const isLogrado = ev.marca === 'LOGRADO' || ev.nivel_logro === 'A' || ev.nivel_logro === 'AD';
+                        const isNoLogrado = ev.marca === 'NO_LOGRADO' || ev.nivel_logro === 'C';
+                        return (
+                          <div key={ev.id || idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 14px', background: '#FAF7FE', borderRadius: '8px', border: '1px solid #EAE3F5' }}>
+                            <div>
+                              <strong style={{ fontSize: '13px', color: '#29243A' }}>{ev.criterio_descripcion || ev.evaluacion_titulo}</strong>
+                              <p style={{ margin: '3px 0 0', fontSize: '11px', color: '#766F87' }}>
+                                {ev.area_nombre || 'General'} · {ev.evaluacion_fecha ? new Date(ev.evaluacion_fecha).toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Evaluación reciente'}
+                              </p>
+                            </div>
+                            <span className={`badge ${isLogrado ? 'green' : isNoLogrado ? 'red' : 'yellow'}`}>
+                              {ev.nivel_logro ? `${ev.nivel_logro} · ` : ''}{isLogrado ? 'Logrado' : isNoLogrado ? 'Requiere apoyo' : 'En proceso'}
+                            </span>
+                          </div>
+                        );
+                      })}
                     </div>
-                  </div>
+                  )}
                 </section>
 
                 <aside className="card guardian-side-card">
                   <div className="card-heading">
-                    <h2>Desglose por Criterios</h2>
+                    <h2>Resumen de Criterios</h2>
                   </div>
                   <div className="criteria-list">
                     <div>
-                      <span><i className="green-dot" /> Identifica información explícita</span>
-                      <span className="badge green">Logrado</span>
+                      <span><i className="green-dot" /> Criterios Logrados (AD/A)</span>
+                      <span className="badge green">{logradosCount}</span>
                     </div>
                     <div>
-                      <span><i className="green-dot" /> Resuelve problemas aditivos</span>
-                      <span className="badge green">Logrado</span>
+                      <span><i className="yellow-dot" /> En Proceso (B)</span>
+                      <span className="badge yellow">{evaluaciones.filter((e: any) => e.marca === 'NO_OBSERVADO' || e.nivel_logro === 'B').length}</span>
                     </div>
                     <div>
-                      <span><i className="yellow-dot" /> Infiere relaciones lógicas</span>
-                      <span className="badge yellow">En proceso</span>
-                    </div>
-                    <div>
-                      <span><i className="red-dot" /> Identifica la idea principal</span>
-                      <span className="badge red">Requiere apoyo</span>
+                      <span><i className="red-dot" /> Necesitan Refuerzo (C)</span>
+                      <span className="badge red">{atencionCount}</span>
                     </div>
                   </div>
                 </aside>
@@ -326,53 +344,48 @@ export function GuardianSpace() {
               <section className="card table-card">
                 <div className="card-heading">
                   <div>
-                    <h2>Registros Oficiales de Evaluación</h2>
-                    <p>Instrumentos aplicados y validados por el docente en el aula</p>
+                    <h2>Registros Oficiales de Evaluación ({evaluaciones.length})</h2>
+                    <p>Instrumentos aplicados y validados por el docente en el aula (datos reales PostgreSQL)</p>
                   </div>
                 </div>
-                <div className="table-scroll">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Evaluación</th>
-                        <th>Área</th>
-                        <th>Fecha</th>
-                        <th>Resultado</th>
-                        <th>Observación del Docente</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr>
-                        <td><strong>Comprensión de textos narrativos II</strong></td>
-                        <td>Comunicación</td>
-                        <td>18 Jun, 2025</td>
-                        <td><span className="badge yellow">B · En proceso</span></td>
-                        <td>Requiere mayor detenimiento al identificar la idea central.</td>
-                      </tr>
-                      <tr>
-                        <td><strong>Resolución de problemas de cantidad</strong></td>
-                        <td>Matemática</td>
-                        <td>14 Jun, 2025</td>
-                        <td><span className="badge green">A · Logrado</span></td>
-                        <td>Excelente manejo de adición y sustracción combinada.</td>
-                      </tr>
-                      <tr>
-                        <td><strong>Los seres vivos y su ambiente</strong></td>
-                        <td>Ciencia y Tecnología</td>
-                        <td>10 Jun, 2025</td>
-                        <td><span className="badge green">AD · Destacado</span></td>
-                        <td>Participación activa y clara comprensión de los conceptos.</td>
-                      </tr>
-                      <tr>
-                        <td><strong>Convivencia democrática en el aula</strong></td>
-                        <td>Personal Social</td>
-                        <td>05 Jun, 2025</td>
-                        <td><span className="badge green">A · Logrado</span></td>
-                        <td>Cumple puntualmente los acuerdos de convivencia grupal.</td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
+                {evaluaciones.length === 0 ? (
+                  <div style={{ padding: '36px', textAlign: 'center', color: '#766F87', fontSize: '13px' }}>
+                    No hay registros de evaluación oficiales para este estudiante aún.
+                  </div>
+                ) : (
+                  <div className="table-scroll">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Evaluación</th>
+                          <th>Área</th>
+                          <th>Fecha</th>
+                          <th>Resultado</th>
+                          <th>Observación del Docente</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {evaluaciones.map((ev: any, idx: number) => {
+                          const isLogrado = ev.marca === 'LOGRADO' || ev.nivel_logro === 'A' || ev.nivel_logro === 'AD';
+                          const isNoLogrado = ev.marca === 'NO_LOGRADO' || ev.nivel_logro === 'C';
+                          return (
+                            <tr key={ev.id || idx}>
+                              <td><strong>{ev.evaluacion_titulo || 'Evaluación curricular'}</strong></td>
+                              <td>{ev.area_nombre || 'General'}</td>
+                              <td>{ev.evaluacion_fecha ? new Date(ev.evaluacion_fecha).toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</td>
+                              <td>
+                                <span className={`badge ${isLogrado ? 'green' : isNoLogrado ? 'red' : 'yellow'}`}>
+                                  {ev.nivel_logro ? `${ev.nivel_logro} · ` : ''}{isLogrado ? 'Logrado' : isNoLogrado ? 'No logrado' : 'En proceso'}
+                                </span>
+                              </td>
+                              <td>{ev.observaciones || 'Criterio evaluado en sesión de clase.'}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </section>
             )}
 
@@ -386,33 +399,42 @@ export function GuardianSpace() {
                       <h2>Recomendaciones para afianzar en casa</h2>
                     </div>
                   </div>
-                  <div className="support-list">
-                    <article className="support-item">
-                      <div className="support-icon violet">
-                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M3 4h7a2 2 0 0 1 2 2v15a3 3 0 0 0-3-3H3zM21 4h-7a2 2 0 0 0-2 2v15a3 3 0 0 1 3-3h6z"/>
-                        </svg>
-                      </div>
-                      <div>
-                        <strong>Lectura dialogada de 15 minutos diarios</strong>
-                        <p>Lean juntos una noticia corta o fábula y conversen sobre: "¿De qué trató principalmente la historia?". Ayúdale a diferenciar el tema principal de los detalles secundarios.</p>
-                        <small>Propuesto por: Prof. María Salazar</small>
-                      </div>
-                    </article>
-
-                    <article className="support-item">
-                      <div className="support-icon green">
-                        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
-                        </svg>
-                      </div>
-                      <div>
-                        <strong>Juegos de cálculo mental cotidiano</strong>
-                        <p>Aprovecha situaciones cotidianas como compras pequeñas o conteo de objetos para ejercitar sumas y restas mentales rápidas sin presión.</p>
-                        <small>Propuesto por: Prof. María Salazar</small>
-                      </div>
-                    </article>
-                  </div>
+                  {alertas.length === 0 && recomendaciones.length === 0 ? (
+                    <div style={{ padding: '36px', textAlign: 'center', color: '#766F87', fontSize: '13px' }}>
+                      No hay alertas pedagógicas ni recomendaciones activas registradas en este momento.
+                    </div>
+                  ) : (
+                    <div className="support-list">
+                      {alertas.map((al: any, idx: number) => (
+                        <article className="support-item" key={`al-${idx}`}>
+                          <div className="support-icon orange">
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M12 3 2.5 20h19z"/><path d="M12 9v5M12 17.5v.5"/>
+                            </svg>
+                          </div>
+                          <div>
+                            <strong>Alerta Pedagógica: {al.titulo}</strong>
+                            <p>{al.detalle || 'El estudiante requiere afianzar las competencias del área.'}</p>
+                            <small>Nivel: {al.nivel} · Registrado el {al.created_at ? new Date(al.created_at).toLocaleDateString('es-PE') : 'recientemente'}</small>
+                          </div>
+                        </article>
+                      ))}
+                      {recomendaciones.map((rec: any, idx: number) => (
+                        <article className="support-item" key={`rec-${idx}`}>
+                          <div className="support-icon violet">
+                            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M3 4h7a2 2 0 0 1 2 2v15a3 3 0 0 0-3-3H3zM21 4h-7a2 2 0 0 0-2 2v15a3 3 0 0 1 3-3h6z"/>
+                            </svg>
+                          </div>
+                          <div>
+                            <strong>{rec.titulo}</strong>
+                            <p>{rec.descripcion}</p>
+                            <small>Estado: {rec.estado} {rec.fecha_aplicacion ? `· Aplicación: ${new Date(rec.fecha_aplicacion).toLocaleDateString('es-PE')}` : ''}</small>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  )}
                 </section>
 
                 <aside className="card support-rules-card">

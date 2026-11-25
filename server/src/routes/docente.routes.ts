@@ -4,6 +4,8 @@ import {
   validateBody,
   CreateAulaSchema,
   CreateEstudianteSchema,
+  UpdateEstudianteSchema,
+  BatchCreateEstudiantesSchema,
   SaveEvaluacionSchema,
   AgendaEventoSchema,
   CancelAgendaEventoSchema,
@@ -14,10 +16,15 @@ import {
 import {
   getAulas,
   addAula,
+  removeAula,
   getEstudiantes,
   getEstudianteDetalle,
   getEstudianteAnalisis,
   addEstudiante,
+  importEstudiantesBatch,
+  regenerateCodigoEstudiante,
+  editEstudiante,
+  removeEstudiante,
   getAreas,
   getCriterios,
   getEvaluaciones,
@@ -52,11 +59,16 @@ docenteRouter.get('/criterios', getCriterios);
 
 docenteRouter.get('/aulas', getAulas);
 docenteRouter.post('/aulas', validateBody(CreateAulaSchema), addAula);
+docenteRouter.delete('/aulas/:id', removeAula);
 
 docenteRouter.get('/estudiantes', getEstudiantes);
 docenteRouter.get('/estudiantes/:id', getEstudianteDetalle);
 docenteRouter.get('/estudiantes/:id/analisis', getEstudianteAnalisis);
 docenteRouter.post('/estudiantes', validateBody(CreateEstudianteSchema), addEstudiante);
+docenteRouter.post('/estudiantes/batch', validateBody(BatchCreateEstudiantesSchema), importEstudiantesBatch);
+docenteRouter.post('/estudiantes/:id/regenerar-codigo', regenerateCodigoEstudiante);
+docenteRouter.put('/estudiantes/:id', validateBody(UpdateEstudianteSchema), editEstudiante);
+docenteRouter.delete('/estudiantes/:id', removeEstudiante);
 
 docenteRouter.get('/evaluaciones', getEvaluaciones);
 docenteRouter.post('/evaluaciones', validateBody(SaveEvaluacionSchema), createEvaluacion);

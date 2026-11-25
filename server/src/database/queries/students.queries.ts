@@ -1,6 +1,36 @@
+import crypto from 'node:crypto';
 import { query, withTransaction } from '../connection.js';
 
 // AISLAMIENTO FUNDAMENTAL: Todas las operaciones reciben `docenteId` y filtran estrictamente por él
+
+// Generador de códigos de vinculación seguros, aleatorios y no predecibles
+export function generateSecureLinkCode(): string {
+  const chars = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ'; // 32 caracteres legibles sin confusión (sin 0, O, 1, I)
+  const bytes = crypto.randomBytes(6);
+  let code = '';
+  for (let i = 0; i < 6; i++) {
+    code += chars[bytes[i] % chars.length];
+  }
+  return `VINC-${code}`;
+}
+
+async function insertUniqueInvitation(client: any, docenteId: number, estudianteId: number): Promise<string> {
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const invCode = generateSecureLinkCode();
+    try {
+      await client.query(
+        `INSERT INTO invitaciones_vinculacion (docente_id, estudiante_id, codigo_invitacion, expira_en)
+         VALUES ($1, $2, $3, NOW() + INTERVAL '90 days')`,
+        [docenteId, estudianteId, invCode]
+      );
+      return invCode;
+    } catch (err: any) {
+      if (err.code === '23505') continue; // Conflicto único, reintentar con otro código
+      throw err;
+    }
+  }
+  throw new Error('No se pudo generar un código de vinculación único. Inténtelo de nuevo.');
+}
 
 export async function findAulasByDocente(docenteId: number) {
   const res = await query(
@@ -109,11 +139,11 @@ export async function findEstudianteByIdAndDocente(estudianteId: number, docente
 }
 
 export async function createEstudiante(docenteId: number, data: {
-  aulaId?: number;
+  aulaId?: number | null;
   nombres: string;
   apellidos: string;
   dni?: string;
-  codigo: string;
+  codigo?: string;
   colorAvatar?: string;
 }) {
   return withTransaction(async (client) => {
@@ -123,8 +153,25 @@ export async function createEstudiante(docenteId: number, data: {
         [data.aulaId, docenteId]
       );
       if (aulaCheck.rows.length === 0) {
-        throw new Error('El aula seleccionada no existe o no pertenece al docente.');
+        throw new Error('El aula seleccionada no existe o no pertenece a sus aulas autorizadas.');
       }
+    }
+
+    // Generar código de estudiante si no viene provisto
+    let codigoFinal = data.codigo?.trim().toUpperCase();
+    if (!codigoFinal) {
+      const countRes = await client.query(
+        'SELECT COUNT(*)::int as count FROM estudiantes WHERE docente_id = $1',
+        [docenteId]
+      );
+      const nextNum = (countRes.rows[0].count || 0) + 1;
+      codigoFinal = `EST-${String(nextNum).padStart(3, '0')}`;
+    }
+
+    // Validar DNI si está presente
+    const cleanDni = data.dni?.trim() || null;
+    if (cleanDni && !/^\d{8}$/.test(cleanDni)) {
+      throw new Error('El DNI debe tener exactamente 8 dígitos numéricos.');
     }
 
     const res = await client.query(
@@ -136,23 +183,269 @@ export async function createEstudiante(docenteId: number, data: {
         data.aulaId || null,
         data.nombres.trim(),
         data.apellidos.trim(),
-        data.dni?.trim() || null,
-        data.codigo.trim().toUpperCase(),
+        cleanDni,
+        codigoFinal,
         data.colorAvatar || '#D9C8EF',
       ]
     );
     const estudiante = res.rows[0];
 
-    // Crear código de vinculación para apoderado
-    const invCode = `VINC-${data.codigo.trim().toUpperCase().replace(/[^A-Z0-9]/g, '')}`;
-    await client.query(
-      `INSERT INTO invitaciones_vinculacion (docente_id, estudiante_id, codigo_invitacion, expira_en)
-       VALUES ($1, $2, $3, NOW() + INTERVAL '30 days')
-       ON CONFLICT (codigo_invitacion) DO NOTHING`,
-      [docenteId, estudiante.id, invCode]
-    );
+    // Generar código de vinculación seguro e impredecible (ej. VINC-7K9M2P)
+    const invCode = await insertUniqueInvitation(client, docenteId, estudiante.id);
+    estudiante.codigo_vinculacion_apoderado = invCode;
 
     return estudiante;
+  });
+}
+
+export async function createEstudiantesBatch(docenteId: number, aulaId: number, estudiantesList: Array<{
+  nombres: string;
+  apellidos: string;
+  dni?: string;
+  codigo?: string;
+}>) {
+  return withTransaction(async (client) => {
+    // 1. Verificar aula del docente
+    const aulaCheck = await client.query(
+      'SELECT id, grado, seccion FROM aulas WHERE id = $1 AND docente_id = $2',
+      [aulaId, docenteId]
+    );
+    if (aulaCheck.rows.length === 0) {
+      throw new Error('El aula seleccionada no existe o no pertenece a su cuenta de docente.');
+    }
+    const aula = aulaCheck.rows[0];
+
+    // 2. Obtener DNI y códigos existentes del docente para prevención de duplicados
+    const existingRes = await client.query(
+      'SELECT id, dni, codigo, nombres, apellidos FROM estudiantes WHERE docente_id = $1',
+      [docenteId]
+    );
+    const existingDnis = new Set(existingRes.rows.filter(r => r.dni).map(r => r.dni));
+    const existingCodes = new Set(existingRes.rows.map(r => r.codigo.toUpperCase()));
+
+    const colors = ['#D9C8EF', '#BEE3D0', '#C8D9F5', '#F4C6A6', '#F3D6B8', '#D5CEF2', '#C8E3E2', '#F0CFCF'];
+    const insertedStudents: any[] = [];
+    const rejectedStudents: Array<{ item: any; motivo: string }> = [];
+    const seenBatchDnis = new Set<string>();
+    const seenBatchCodes = new Set<string>();
+
+    let autoCodeCounter = existingRes.rows.length + 1;
+
+    for (let i = 0; i < estudiantesList.length; i++) {
+      const item = estudiantesList[i];
+      const nombres = item.nombres?.trim();
+      const apellidos = item.apellidos?.trim();
+      const rawDni = item.dni ? String(item.dni).trim() : '';
+      let codigo = item.codigo ? String(item.codigo).trim().toUpperCase() : '';
+
+      // Validación de nombres y apellidos
+      if (!nombres || !apellidos) {
+        rejectedStudents.push({
+          item,
+          motivo: 'Faltan nombres o apellidos obligatorios.',
+        });
+        continue;
+      }
+
+      // Validación de DNI
+      if (rawDni) {
+        if (!/^\d{8}$/.test(rawDni)) {
+          rejectedStudents.push({
+            item,
+            motivo: `El DNI "${rawDni}" no tiene el formato válido de 8 dígitos numéricos.`,
+          });
+          continue;
+        }
+
+        if (seenBatchDnis.has(rawDni)) {
+          rejectedStudents.push({
+            item,
+            motivo: `El DNI "${rawDni}" está duplicado en el mismo archivo cargado.`,
+          });
+          continue;
+        }
+
+        if (existingDnis.has(rawDni)) {
+          rejectedStudents.push({
+            item,
+            motivo: `Ya existe un estudiante registrado con el DNI "${rawDni}".`,
+          });
+          continue;
+        }
+      }
+
+      // Generar o validar código
+      if (!codigo) {
+        while (existingCodes.has(`EST-${String(autoCodeCounter).padStart(3, '0')}`) || seenBatchCodes.has(`EST-${String(autoCodeCounter).padStart(3, '0')}`)) {
+          autoCodeCounter++;
+        }
+        codigo = `EST-${String(autoCodeCounter).padStart(3, '0')}`;
+        autoCodeCounter++;
+      } else {
+        if (seenBatchCodes.has(codigo)) {
+          rejectedStudents.push({
+            item,
+            motivo: `El código "${codigo}" está repetido en la lista de importación.`,
+          });
+          continue;
+        }
+        if (existingCodes.has(codigo)) {
+          rejectedStudents.push({
+            item,
+            motivo: `El código "${codigo}" ya está asignado a otro estudiante de sus aulas.`,
+          });
+          continue;
+        }
+      }
+
+      if (rawDni) seenBatchDnis.add(rawDni);
+      seenBatchCodes.add(codigo);
+
+      const colorAvatar = colors[(insertedStudents.length + i) % colors.length];
+
+      // Inserción en PostgreSQL
+      const insertRes = await client.query(
+        `INSERT INTO estudiantes (docente_id, aula_id, nombres, apellidos, dni, codigo, color_avatar)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING *`,
+        [docenteId, aulaId, nombres, apellidos, rawDni || null, codigo, colorAvatar]
+      );
+      const student = insertRes.rows[0];
+
+      // Generación de código de vinculación seguro
+      const invCode = await insertUniqueInvitation(client, docenteId, student.id);
+      student.codigo_vinculacion_apoderado = invCode;
+      student.grado = aula.grado;
+      student.seccion = aula.seccion;
+
+      insertedStudents.push(student);
+    }
+
+    return {
+      success: true,
+      aula: `${aula.grado} ${aula.seccion}`,
+      totalProcesados: estudiantesList.length,
+      registradosCount: insertedStudents.length,
+      rechazadosCount: rejectedStudents.length,
+      registrados: insertedStudents,
+      rechazados: rejectedStudents,
+    };
+  });
+}
+
+export async function regenerateStudentLinkCode(docenteId: number, estudianteId: number) {
+  return withTransaction(async (client) => {
+    const stCheck = await client.query(
+      'SELECT id, nombres, apellidos, codigo FROM estudiantes WHERE id = $1 AND docente_id = $2',
+      [estudianteId, docenteId]
+    );
+    if (stCheck.rows.length === 0) {
+      throw new Error('Estudiante no encontrado o no pertenece a sus aulas.');
+    }
+
+    // Invalidar invitaciones anteriores no usadas
+    await client.query(
+      `UPDATE invitaciones_vinculacion 
+       SET expira_en = NOW() - INTERVAL '1 second'
+       WHERE estudiante_id = $1 AND usado = FALSE`,
+      [estudianteId]
+    );
+
+    // Generar nuevo código de vinculación único
+    const newCode = await insertUniqueInvitation(client, docenteId, estudianteId);
+    return {
+      estudianteId,
+      codigo: newCode,
+      estudianteNombre: `${stCheck.rows[0].nombres} ${stCheck.rows[0].apellidos}`,
+    };
+  });
+}
+
+export async function updateEstudiante(docenteId: number, estudianteId: number, data: {
+  nombres: string;
+  apellidos: string;
+  dni?: string;
+  codigo?: string;
+  aulaId?: number | null;
+  colorAvatar?: string;
+}) {
+  return withTransaction(async (client) => {
+    const check = await client.query(
+      'SELECT id FROM estudiantes WHERE id = $1 AND docente_id = $2',
+      [estudianteId, docenteId]
+    );
+    if (check.rows.length === 0) {
+      throw new Error('Estudiante no encontrado o no pertenece a sus aulas autorizadas.');
+    }
+
+    if (data.aulaId) {
+      const aulaCheck = await client.query(
+        'SELECT id FROM aulas WHERE id = $1 AND docente_id = $2',
+        [data.aulaId, docenteId]
+      );
+      if (aulaCheck.rows.length === 0) {
+        throw new Error('El aula seleccionada no pertenece a sus aulas autorizadas.');
+      }
+    }
+
+    const cleanDni = data.dni?.trim() || null;
+    if (cleanDni && !/^\d{8}$/.test(cleanDni)) {
+      throw new Error('El DNI debe tener exactamente 8 dígitos.');
+    }
+
+    const res = await client.query(
+      `UPDATE estudiantes
+       SET nombres = $1,
+           apellidos = $2,
+           dni = $3,
+           codigo = COALESCE($4, codigo),
+           aula_id = $5,
+           color_avatar = COALESCE($6, color_avatar),
+           updated_at = NOW()
+       WHERE id = $7 AND docente_id = $8
+       RETURNING *`,
+      [
+        data.nombres.trim(),
+        data.apellidos.trim(),
+        cleanDni,
+        data.codigo ? data.codigo.trim().toUpperCase() : null,
+        data.aulaId ?? null,
+        data.colorAvatar || null,
+        estudianteId,
+        docenteId,
+      ]
+    );
+    return res.rows[0];
+  });
+}
+
+export async function deleteEstudiante(docenteId: number, estudianteId: number) {
+  return withTransaction(async (client) => {
+    const check = await client.query(
+      'SELECT id, nombres, apellidos FROM estudiantes WHERE id = $1 AND docente_id = $2',
+      [estudianteId, docenteId]
+    );
+    if (check.rows.length === 0) {
+      throw new Error('Estudiante no encontrado o no pertenece a sus aulas autorizadas.');
+    }
+
+    await client.query('DELETE FROM estudiantes WHERE id = $1 AND docente_id = $2', [estudianteId, docenteId]);
+    return true;
+  });
+}
+
+export async function deleteAula(docenteId: number, aulaId: number) {
+  return withTransaction(async (client) => {
+    const check = await client.query(
+      'SELECT id, grado, seccion FROM aulas WHERE id = $1 AND docente_id = $2',
+      [aulaId, docenteId]
+    );
+    if (check.rows.length === 0) {
+      throw new Error('Aula no encontrada o no pertenece a su cuenta.');
+    }
+
+    await client.query('DELETE FROM aulas WHERE id = $1 AND docente_id = $2', [aulaId, docenteId]);
+    return true;
   });
 }
 

@@ -85,9 +85,28 @@ export const CreateEstudianteSchema = z.object({
   nombres: z.string().min(2, 'Ingrese los nombres del estudiante'),
   apellidos: z.string().min(2, 'Ingrese los apellidos del estudiante'),
   dni: z.string().regex(/^\d{8}$/, 'El DNI debe tener 8 dígitos').optional().or(z.literal('')),
-  codigo: z.string().min(3, 'Ingrese un código único para el estudiante'),
+  codigo: z.string().min(2, 'Ingrese un código único para el estudiante').optional().or(z.literal('')),
   aulaId: z.coerce.number().int().positive().optional().nullable(),
   colorAvatar: z.string().optional(),
+});
+
+export const UpdateEstudianteSchema = z.object({
+  nombres: z.string().min(2, 'Ingrese los nombres del estudiante'),
+  apellidos: z.string().min(2, 'Ingrese los apellidos del estudiante'),
+  dni: z.string().regex(/^\d{8}$/, 'El DNI debe tener 8 dígitos').optional().or(z.literal('')),
+  codigo: z.string().min(2, 'Código inválido').optional().or(z.literal('')),
+  aulaId: z.coerce.number().int().positive().optional().nullable(),
+  colorAvatar: z.string().optional(),
+});
+
+export const BatchCreateEstudiantesSchema = z.object({
+  aulaId: z.coerce.number().int().positive('Debe seleccionar un aula válida'),
+  estudiantes: z.array(z.object({
+    nombres: z.string().min(1, 'El nombre es obligatorio'),
+    apellidos: z.string().min(1, 'El apellido es obligatorio'),
+    dni: z.string().optional().or(z.literal('')),
+    codigo: z.string().optional().or(z.literal('')),
+  })).min(1, 'Debe incluir al menos un estudiante para importar'),
 });
 
 export const SaveEvaluacionSchema = z.object({

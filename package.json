@@ -11,6 +11,7 @@
     "migrate:prod": "node dist-server/database/migrator.js",
     "test:real": "tsx server/test/verify-real-db.ts",
     "test:security": "tsx server/test/auth-security.test.ts",
+    "test:comprehensive": "tsx server/test/test-comprehensive-suite.ts",
     "test:db": "tsx server/test/test-db-connection.ts",
     "build:client": "vite build",
     "build:server": "tsc -p server/tsconfig.json",

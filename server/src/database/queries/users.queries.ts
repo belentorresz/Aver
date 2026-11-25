@@ -115,56 +115,8 @@ export async function createDocenteTransaction(data: {
     );
     const docente = docenteRes.rows[0];
 
-    // 3. Crear aulas y estudiantes iniciales de demostración para el docente recién registrado
-    const aulaRes = await client.query(
-      `INSERT INTO aulas (docente_id, grado, seccion, nivel, anio_escolar)
-       VALUES ($1, '3.º grado', 'A', 'Primaria', '2025')
-       RETURNING id`,
-      [docente.id]
-    );
-    const aulaId = aulaRes.rows[0].id;
-
-    // Aulas adicionales del diseño
-    await client.query(
-      `INSERT INTO aulas (docente_id, grado, seccion, nivel, anio_escolar)
-       VALUES 
-       ($1, '3.º grado', 'B', 'Primaria', '2025'),
-       ($1, '4.º grado', 'A', 'Primaria', '2025'),
-       ($1, '4.º grado', 'B', 'Primaria', '2025')
-       ON CONFLICT DO NOTHING`,
-      [docente.id]
-    );
-
-    // Estudiantes iniciales vinculados al docente
-    const demoStudents = [
-      { nombres: 'Juan', apellidos: 'Pérez', codigo: 'AV-03-001', color: '#F4C6A6', dni: '74839201' },
-      { nombres: 'María', apellidos: 'López', codigo: 'AV-03-002', color: '#BEE3D0', dni: '74839202' },
-      { nombres: 'Carlos', apellidos: 'Fernández', codigo: 'AV-03-003', color: '#C8D9F5', dni: '74839203' },
-      { nombres: 'Ana', apellidos: 'Torres', codigo: 'AV-03-004', color: '#E7C9EF', dni: '74839204' },
-      { nombres: 'Sofía', apellidos: 'Ramírez', codigo: 'AV-03-005', color: '#F3D6B8', dni: '74839205' },
-      { nombres: 'Diego', apellidos: 'Quispe', codigo: 'AV-03-006', color: '#D5CEF2', dni: '74839206' },
-      { nombres: 'Valentina', apellidos: 'Rojas', codigo: 'AV-03-007', color: '#C8E3E2', dni: '74839207' },
-      { nombres: 'Mateo', apellidos: 'Sánchez', codigo: 'AV-03-008', color: '#F0CFCF', dni: '74839208' },
-    ];
-
-    for (const s of demoStudents) {
-      const studentRes = await client.query(
-        `INSERT INTO estudiantes (docente_id, aula_id, nombres, apellidos, dni, codigo, color_avatar)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
-         RETURNING id`,
-        [docente.id, aulaId, s.nombres, s.apellidos, s.dni, s.codigo, s.color]
-      );
-      
-      // Generar código de vinculación para que un apoderado pueda registrarse y vincularse
-      const invCode = `VINC-${s.codigo.replace(/[^A-Z0-9]/g, '')}`;
-      await client.query(
-        `INSERT INTO invitaciones_vinculacion (docente_id, estudiante_id, codigo_invitacion, expira_en)
-         VALUES ($1, $2, $3, NOW() + INTERVAL '30 days')
-         ON CONFLICT (codigo_invitacion) DO NOTHING`,
-        [docente.id, studentRes.rows[0].id, invCode]
-      );
-    }
-
+    // Para docentes nuevos: el panel comienza completamente vacío (0 aulas, 0 estudiantes, 0 evaluaciones ficticias).
+    // Los datos aparecerán únicamente cuando el docente registre sus propias aulas y estudiantes.
     return { usuario, docente };
   });
 }
