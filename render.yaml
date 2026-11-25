@@ -2,6 +2,7 @@ services:
   - type: web
     name: aver-plataforma
     runtime: node
+    region: oregon
     plan: free
     buildCommand: corepack enable && pnpm install --frozen-lockfile=false && pnpm run build
     startCommand: pnpm run migrate:prod && pnpm start

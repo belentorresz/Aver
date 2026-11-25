@@ -12,6 +12,8 @@ const isLocalDatabase =
 const requiresSsl =
   process.env.DB_SSL === 'true' ||
   config.DATABASE_URL.includes('render.com') ||
+  config.DATABASE_URL.includes('render.internal') ||
+  config.DATABASE_URL.includes('dpg-') ||
   config.DATABASE_URL.includes('neon.tech') ||
   config.DATABASE_URL.includes('supabase.co') ||
   (config.NODE_ENV === 'production' && !isLocalDatabase && process.env.DB_SSL !== 'false');

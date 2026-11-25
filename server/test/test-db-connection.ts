@@ -51,7 +51,7 @@ async function testConnection() {
     console.log(`\nParámetro detectado (protegido): ${sanitize(maskedUri)}`);
   const client = new Client({
     connectionString,
-    ssl: process.env.NODE_ENV === 'production' || connectionString.includes('render.com') || connectionString.includes('neon.tech') || connectionString.includes('supabase.co')
+    ssl: process.env.NODE_ENV === 'production' || connectionString.includes('render.com') || connectionString.includes('render.internal') || connectionString.includes('dpg-') || connectionString.includes('neon.tech') || connectionString.includes('supabase.co')
       ? { rejectUnauthorized: false }
       : false,
     connectionTimeoutMillis: 5000,
