@@ -277,6 +277,22 @@ export const api = {
     return res.json();
   },
 
+  async getDocenteEvaluacionDetalle(id: number): Promise<{ success: boolean; data?: any; message?: string }> {
+    const res = await fetch(`${API_BASE}/docente/evaluaciones/${id}`, {
+      headers: { ...getAuthHeader() },
+    });
+    return res.json();
+  },
+
+  async updateDocenteEvaluacion(id: number, data: any): Promise<{ success: boolean; data?: any; message?: string }> {
+    const res = await fetch(`${API_BASE}/docente/evaluaciones/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+
   async createDocenteEvaluacion(data: any): Promise<{ success: boolean; data?: any; message?: string }> {
     const res = await fetch(`${API_BASE}/docente/evaluaciones`, {
       method: 'POST',
@@ -341,6 +357,30 @@ export const api = {
     return res.json();
   },
 
+  async getDocenteAnalisisGrupal(aulaId?: number, areaId?: number): Promise<{ success: boolean; data?: any; message?: string }> {
+    const params = new URLSearchParams();
+    if (aulaId) params.set('aulaId', String(aulaId));
+    if (areaId) params.set('areaId', String(areaId));
+    const qs = params.toString();
+    const url = `${API_BASE}/docente/analisis-grupal${qs ? `?${qs}` : ''}`;
+    const res = await fetch(url, {
+      headers: { ...getAuthHeader() },
+    });
+    return res.json();
+  },
+
+  async getDocenteSugerenciasRefuerzo(aulaId?: number, areaId?: number): Promise<{ success: boolean; data?: any[]; message?: string }> {
+    const params = new URLSearchParams();
+    if (aulaId) params.set('aulaId', String(aulaId));
+    if (areaId) params.set('areaId', String(areaId));
+    const qs = params.toString();
+    const url = `${API_BASE}/docente/refuerzo/sugerencias${qs ? `?${qs}` : ''}`;
+    const res = await fetch(url, {
+      headers: { ...getAuthHeader() },
+    });
+    return res.json();
+  },
+
   async getDocenteRecomendaciones(): Promise<{ success: boolean; data?: any[]; message?: string }> {
     const res = await fetch(`${API_BASE}/docente/recomendaciones`, {
       headers: { ...getAuthHeader() },
@@ -351,6 +391,15 @@ export const api = {
   async createDocenteRecomendacion(data: any): Promise<{ success: boolean; data?: any; message?: string }> {
     const res = await fetch(`${API_BASE}/docente/recomendaciones`, {
       method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+
+  async updateDocenteRecomendacion(id: number, data: any): Promise<{ success: boolean; data?: any; message?: string }> {
+    const res = await fetch(`${API_BASE}/docente/recomendaciones/${id}`, {
+      method: 'PUT',
       headers: { 'Content-Type': 'application/json', ...getAuthHeader() },
       body: JSON.stringify(data),
     });

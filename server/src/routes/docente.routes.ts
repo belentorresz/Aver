@@ -7,9 +7,11 @@ import {
   UpdateEstudianteSchema,
   BatchCreateEstudiantesSchema,
   SaveEvaluacionSchema,
+  UpdateEvaluacionSchema,
   AgendaEventoSchema,
   CancelAgendaEventoSchema,
   CreateRecomendacionSchema,
+  UpdateRecomendacionSchema,
   UpdateDocentePerfilSchema,
   UpdateDocenteFotoSchema,
 } from '../middlewares/validation.middleware.js';
@@ -28,6 +30,8 @@ import {
   getAreas,
   getCriterios,
   getEvaluaciones,
+  getEvaluacionDetalle,
+  editEvaluacion,
   createEvaluacion,
   parseExcelFile,
   getAlertas,
@@ -36,6 +40,9 @@ import {
   getHistorial,
   getRecomendaciones,
   addRecomendacion,
+  editRecomendacion,
+  getAnalisisGrupal,
+  getSugerenciasRefuerzo,
   getPerfilDocente,
   updatePerfilDocente,
   updatePerfilFotoDocente,
@@ -71,10 +78,15 @@ docenteRouter.put('/estudiantes/:id', validateBody(UpdateEstudianteSchema), edit
 docenteRouter.delete('/estudiantes/:id', removeEstudiante);
 
 docenteRouter.get('/evaluaciones', getEvaluaciones);
+docenteRouter.get('/evaluaciones/:id', getEvaluacionDetalle);
+docenteRouter.put('/evaluaciones/:id', validateBody(UpdateEvaluacionSchema), editEvaluacion);
 docenteRouter.post('/evaluaciones', validateBody(SaveEvaluacionSchema), createEvaluacion);
 docenteRouter.post('/ocr/confirmar', validateBody(SaveEvaluacionSchema), createEvaluacion);
 docenteRouter.post('/excel/parse', parseExcelFile);
 docenteRouter.post('/excel/confirmar', validateBody(SaveEvaluacionSchema), createEvaluacion);
+
+docenteRouter.get('/analisis-grupal', getAnalisisGrupal);
+docenteRouter.get('/refuerzo/sugerencias', getSugerenciasRefuerzo);
 
 docenteRouter.get('/alertas', getAlertas);
 docenteRouter.patch('/alertas/:id', patchAlertaEstado);
@@ -82,6 +94,7 @@ docenteRouter.patch('/alertas/:id', patchAlertaEstado);
 docenteRouter.get('/historial', getHistorial);
 docenteRouter.get('/recomendaciones', getRecomendaciones);
 docenteRouter.post('/recomendaciones', validateBody(CreateRecomendacionSchema), addRecomendacion);
+docenteRouter.put('/recomendaciones/:id', validateBody(UpdateRecomendacionSchema), editRecomendacion);
 
 // Agenda compartida (Docente CRUD + Cancelación)
 docenteRouter.get('/agenda', getDocenteAgenda);

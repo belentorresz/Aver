@@ -18,13 +18,18 @@ import {
   findAreasAcademicas,
   findCriteriosByDocente,
   findEvaluacionesByDocente,
+  findEvaluacionByIdAndDocente,
   findAlertasByDocente,
   updateAlertaEstado,
   saveEvaluacionCompletaTransaction,
+  updateEvaluacionCompletaTransaction,
+  findAnalisisGrupalByAula,
+  generateSugerenciasRefuerzo,
   findDashboardResumen,
   findHistorialByDocente,
   findRecomendacionesByDocente,
   createRecomendacion,
+  updateRecomendacion,
 } from '../database/queries/evaluations.queries.js';
 import {
   findDocenteProfileByUsuarioId,
@@ -250,6 +255,36 @@ export async function createEvaluacion(req: AuthenticatedRequest, res: Response)
   }
 }
 
+export async function getEvaluacionDetalle(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const docenteId = req.user!.docenteId!;
+    const id = parseInt(req.params.id, 10);
+    const detalle = await findEvaluacionByIdAndDocente(docenteId, id);
+    if (!detalle) {
+      res.status(404).json({ success: false, message: 'Evaluación no encontrada o no pertenece al docente.' });
+      return;
+    }
+    res.json({ success: true, data: detalle });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+}
+
+export async function editEvaluacion(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const docenteId = req.user!.docenteId!;
+    const id = parseInt(req.params.id, 10);
+    const updated = await updateEvaluacionCompletaTransaction(docenteId, id, req.body);
+    res.json({
+      success: true,
+      message: 'Evaluación actualizada correctamente en PostgreSQL.',
+      data: updated,
+    });
+  } catch (error: any) {
+    res.status(error.status || 400).json({ success: false, message: error.message });
+  }
+}
+
 export async function parseExcelFile(req: AuthenticatedRequest, res: Response): Promise<void> {
   try {
     const { fileName, base64Data, sheetName } = req.body;
@@ -354,6 +389,53 @@ export async function addRecomendacion(req: AuthenticatedRequest, res: Response)
     res.status(201).json({ success: true, message: 'Actividad de refuerzo registrada correctamente.', data: rec });
   } catch (error: any) {
     res.status(400).json({ success: false, message: error.message });
+  }
+}
+
+export async function editRecomendacion(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const docenteId = req.user!.docenteId!;
+    const id = parseInt(req.params.id, 10);
+    const updated = await updateRecomendacion(docenteId, id, req.body);
+    res.json({
+      success: true,
+      message: 'Actividad de refuerzo actualizada correctamente.',
+      data: updated,
+    });
+  } catch (error: any) {
+    res.status(error.status || 400).json({ success: false, message: error.message });
+  }
+}
+
+export async function getAnalisisGrupal(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const docenteId = req.user!.docenteId!;
+    const aulaId = req.query.aulaId ? parseInt(req.query.aulaId as string, 10) : undefined;
+    const areaId = req.query.areaId ? parseInt(req.query.areaId as string, 10) : undefined;
+    const analisis = await findAnalisisGrupalByAula(
+      docenteId,
+      Number.isFinite(aulaId) ? aulaId : undefined,
+      Number.isFinite(areaId) ? areaId : undefined
+    );
+    res.json({ success: true, data: analisis });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+}
+
+export async function getSugerenciasRefuerzo(req: AuthenticatedRequest, res: Response): Promise<void> {
+  try {
+    const docenteId = req.user!.docenteId!;
+    const aulaId = req.query.aulaId ? parseInt(req.query.aulaId as string, 10) : undefined;
+    const areaId = req.query.areaId ? parseInt(req.query.areaId as string, 10) : undefined;
+    const sugerencias = await generateSugerenciasRefuerzo(
+      docenteId,
+      Number.isFinite(aulaId) ? aulaId : undefined,
+      Number.isFinite(areaId) ? areaId : undefined
+    );
+    res.json({ success: true, data: sugerencias });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
   }
 }
 

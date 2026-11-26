@@ -1801,20 +1801,521 @@ function StudentsPage({
 }
 
 // 4. EVALUACIONES
+function EditEvaluationModal({
+  evaluacionId,
+  aulas,
+  areas,
+  onClose,
+  onSaved,
+}: {
+  evaluacionId: number;
+  aulas: any[];
+  areas: any[];
+  onClose: () => void;
+  onSaved: (msg: string) => void;
+}) {
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+
+  const [titulo, setTitulo] = useState('');
+  const [fecha, setFecha] = useState('');
+  const [sesion, setSesion] = useState('');
+  const [aulaId, setAulaId] = useState<number | ''>('');
+  const [areaId, setAreaId] = useState<number>(areas[0]?.id || 1);
+  const [estado, setEstado] = useState<'COMPLETADA' | 'POR_REVISAR' | 'BORRADOR'>('COMPLETADA');
+  const [criterios, setCriterios] = useState<{ id?: number; descripcion: string }[]>([]);
+  const [estudiantes, setEstudiantes] = useState<any[]>([]);
+  const [resultadosMap, setResultadosMap] = useState<
+    Record<string, { marca: 'LOGRADO' | 'NO_LOGRADO' | 'NO_OBSERVADO'; nivelLogro?: string; observaciones?: string }>
+  >({});
+
+  useEffect(() => {
+    let active = true;
+    async function loadDetail() {
+      setLoading(true);
+      setErrorMsg('');
+      try {
+        const res = await api.getDocenteEvaluacionDetalle(evaluacionId);
+        if (!active) return;
+        if (res.success && res.data) {
+          const { evaluacion, criterios: crits, resultados, estudiantesAula } = res.data;
+          setTitulo(evaluacion.titulo || '');
+          setFecha(evaluacion.fecha ? String(evaluacion.fecha).slice(0, 10) : '');
+          setSesion(evaluacion.sesion || '');
+          setAulaId(evaluacion.aula_id || '');
+          setAreaId(evaluacion.area_id || areas[0]?.id || 1);
+          setEstado(evaluacion.estado || 'COMPLETADA');
+          setCriterios(crits && crits.length > 0 ? crits : [{ descripcion: 'Criterio principal' }]);
+
+          // Estudiantes: usar los del aula si están registrados, o extraer de los resultados existentes
+          let stList = estudiantesAula && estudiantesAula.length > 0 ? [...estudiantesAula] : [];
+          if (stList.length === 0 && resultados) {
+            const seen = new Set<number>();
+            for (const r of resultados) {
+              if (!seen.has(r.estudiante_id)) {
+                seen.add(r.estudiante_id);
+                stList.push({
+                  id: r.estudiante_id,
+                  nombres: r.estudiante_nombres,
+                  apellidos: r.estudiante_apellidos,
+                  codigo: r.estudiante_codigo,
+                  color_avatar: r.estudiante_color,
+                });
+              }
+            }
+          }
+          setEstudiantes(stList);
+
+          // Preservar exactamente las calificaciones registradas en PostgreSQL
+          const rMap: Record<string, any> = {};
+          for (const r of resultados || []) {
+            const key = `${r.estudiante_id}_${r.criterio_id}`;
+            rMap[key] = {
+              marca: r.marca,
+              nivelLogro: r.nivel_logro || '',
+              observaciones: r.observaciones || '',
+            };
+          }
+          setResultadosMap(rMap);
+        } else {
+          setErrorMsg(res.message || 'No se pudo cargar la evaluación.');
+        }
+      } catch (err: any) {
+        if (active) setErrorMsg(err.message || 'Error de conexión.');
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+    loadDetail();
+    return () => {
+      active = false;
+    };
+  }, [evaluacionId]);
+
+  function handleSetStudentResult(
+    estudianteId: number,
+    criterioKey: string | number,
+    marca: 'LOGRADO' | 'NO_LOGRADO' | 'NO_OBSERVADO',
+    nivelLogro?: string,
+    observaciones?: string
+  ) {
+    const key = `${estudianteId}_${criterioKey}`;
+    setResultadosMap((prev) => ({
+      ...prev,
+      [key]: {
+        marca,
+        nivelLogro: nivelLogro !== undefined ? nivelLogro : prev[key]?.nivelLogro || '',
+        observaciones: observaciones !== undefined ? observaciones : prev[key]?.observaciones || '',
+      },
+    }));
+  }
+
+  function handleAddCriterion() {
+    setCriterios((prev) => [...prev, { descripcion: '' }]);
+  }
+
+  function handleCriterionChange(idx: number, val: string) {
+    setCriterios((prev) => {
+      const copy = [...prev];
+      copy[idx] = { ...copy[idx], descripcion: val };
+      return copy;
+    });
+  }
+
+  async function handleSave() {
+    if (!titulo.trim()) {
+      setErrorMsg('Debe ingresar un título para la evaluación.');
+      return;
+    }
+    if (!fecha) {
+      setErrorMsg('Debe seleccionar una fecha válida.');
+      return;
+    }
+    if (criterios.length === 0 || criterios.some((c) => !c.descripcion.trim())) {
+      setErrorMsg('Todos los criterios deben tener una descripción válida.');
+      return;
+    }
+
+    setSaving(true);
+    setErrorMsg('');
+
+    try {
+      const payloadResultados: any[] = [];
+      for (const st of estudiantes) {
+        for (let cIdx = 0; cIdx < criterios.length; cIdx++) {
+          const crit = criterios[cIdx];
+          const keyWithId = crit.id ? `${st.id}_${crit.id}` : null;
+          const keyWithIdx = `${st.id}_idx_${cIdx}`;
+          const currentRes = (keyWithId && resultadosMap[keyWithId]) || resultadosMap[keyWithIdx];
+
+          if (currentRes) {
+            payloadResultados.push({
+              estudianteId: st.id,
+              criterioIndex: cIdx,
+              criterioId: crit.id,
+              marca: currentRes.marca,
+              nivelLogro: currentRes.nivelLogro || null,
+              observaciones: currentRes.observaciones || null,
+            });
+          }
+        }
+      }
+
+      const payload = {
+        titulo: titulo.trim(),
+        fecha,
+        sesion: sesion.trim() || null,
+        aulaId: aulaId ? Number(aulaId) : null,
+        areaId: Number(areaId),
+        estado,
+        criterios: criterios.map((c) => ({
+          id: c.id,
+          descripcion: c.descripcion.trim(),
+        })),
+        resultados: payloadResultados,
+      };
+
+      const res = await api.updateDocenteEvaluacion(evaluacionId, payload);
+      if (res.success) {
+        onSaved('Evaluación actualizada correctamente en PostgreSQL');
+      } else {
+        setErrorMsg(res.message || 'Error al actualizar la evaluación.');
+      }
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Error de comunicación con el servidor.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="modal-backdrop">
+      <div className="comparison-modal" style={{ maxWidth: '820px', width: '95%', maxHeight: '90vh', overflowY: 'auto' }}>
+        <button type="button" className="modal-close" onClick={onClose} disabled={saving}>
+          ✕
+        </button>
+        <span className="badge purple">Editar evaluación</span>
+        <h1 style={{ fontSize: '20px', margin: '6px 0 14px' }}>Modificar datos y calificaciones registradas</h1>
+        <p style={{ fontSize: '11px', color: '#766F87', margin: '0 0 18px' }}>
+          Puedes corregir el título, aula, fecha, criterios y modificar notas de los estudiantes sin perder los datos previamente guardados en PostgreSQL.
+        </p>
+
+        {errorMsg && <div className="auth-alert error" style={{ marginBottom: '16px' }}>{errorMsg}</div>}
+
+        {loading ? (
+          <div style={{ padding: '40px', textAlign: 'center', color: '#766F87', fontSize: '12px' }}>
+            Cargando evaluación y calificaciones desde PostgreSQL...
+          </div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            {/* 1. Datos generales */}
+            <div style={{ background: '#FAF9FC', padding: '16px', borderRadius: '12px', border: '1px solid #ECE7F2' }}>
+              <strong style={{ fontSize: '12px', color: '#3A3347', display: 'block', marginBottom: '12px' }}>
+                1. Información de la evaluación
+              </strong>
+              <div className="form-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px' }}>
+                <label style={{ fontSize: '11px', fontWeight: 600 }}>
+                  Título de la evaluación *
+                  <input
+                    value={titulo}
+                    onChange={(e) => setTitulo(e.target.value)}
+                    placeholder="Ej. Evaluación de comprensión lectora"
+                    style={{ height: '38px', borderRadius: '8px', border: '1px solid #DDD7E3', padding: '0 10px', fontSize: '11px' }}
+                  />
+                </label>
+                <label style={{ fontSize: '11px', fontWeight: 600 }}>
+                  Fecha *
+                  <input
+                    type="date"
+                    value={fecha}
+                    onChange={(e) => setFecha(e.target.value)}
+                    style={{ height: '38px', borderRadius: '8px', border: '1px solid #DDD7E3', padding: '0 10px', fontSize: '11px' }}
+                  />
+                </label>
+                <label style={{ fontSize: '11px', fontWeight: 600 }}>
+                  Aula
+                  <select
+                    value={aulaId}
+                    onChange={(e) => setAulaId(e.target.value ? Number(e.target.value) : '')}
+                    style={{ height: '38px', borderRadius: '8px', border: '1px solid #DDD7E3', padding: '0 10px', fontSize: '11px' }}
+                  >
+                    <option value="">Sin aula asignada (General)</option>
+                    {aulas.map((a) => (
+                      <option key={a.id} value={a.id}>
+                        {a.grado} {a.seccion}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label style={{ fontSize: '11px', fontWeight: 600 }}>
+                  Área académica *
+                  <select
+                    value={areaId}
+                    onChange={(e) => setAreaId(Number(e.target.value))}
+                    style={{ height: '38px', borderRadius: '8px', border: '1px solid #DDD7E3', padding: '0 10px', fontSize: '11px' }}
+                  >
+                    {areas.map((ar) => (
+                      <option key={ar.id} value={ar.id}>
+                        {ar.nombre}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label style={{ fontSize: '11px', fontWeight: 600 }}>
+                  Sesión o tema
+                  <input
+                    value={sesion}
+                    onChange={(e) => setSesion(e.target.value)}
+                    placeholder="Ej. Sesión 4: Ideas principales"
+                    style={{ height: '38px', borderRadius: '8px', border: '1px solid #DDD7E3', padding: '0 10px', fontSize: '11px' }}
+                  />
+                </label>
+                <label style={{ fontSize: '11px', fontWeight: 600 }}>
+                  Estado
+                  <select
+                    value={estado}
+                    onChange={(e) => setEstado(e.target.value as any)}
+                    style={{ height: '38px', borderRadius: '8px', border: '1px solid #DDD7E3', padding: '0 10px', fontSize: '11px' }}
+                  >
+                    <option value="COMPLETADA">Completada</option>
+                    <option value="POR_REVISAR">Por revisar</option>
+                    <option value="BORRADOR">Borrador</option>
+                  </select>
+                </label>
+              </div>
+            </div>
+
+            {/* 2. Criterios de evaluación */}
+            <div style={{ background: '#FAF9FC', padding: '16px', borderRadius: '12px', border: '1px solid #ECE7F2' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                <strong style={{ fontSize: '12px', color: '#3A3347' }}>2. Criterios de evaluación ({criterios.length})</strong>
+                <Button variant="secondary" size="sm" icon="plus" onClick={handleAddCriterion}>
+                  Agregar criterio
+                </Button>
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {criterios.map((c, idx) => (
+                  <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span
+                      style={{
+                        width: '26px',
+                        height: '26px',
+                        borderRadius: '6px',
+                        background: '#ECE7F2',
+                        color: '#654B88',
+                        fontSize: '11px',
+                        fontWeight: 700,
+                        display: 'grid',
+                        placeItems: 'center',
+                        flexShrink: 0,
+                      }}
+                    >
+                      {idx + 1}
+                    </span>
+                    <input
+                      value={c.descripcion}
+                      onChange={(e) => handleCriterionChange(idx, e.target.value)}
+                      placeholder={`Descripción del criterio ${idx + 1}`}
+                      style={{
+                        flex: 1,
+                        height: '36px',
+                        borderRadius: '8px',
+                        border: '1px solid #DDD7E3',
+                        padding: '0 10px',
+                        fontSize: '11px',
+                        background: '#fff',
+                      }}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* 3. Calificaciones y notas individuales de estudiantes */}
+            <div style={{ background: '#FAF9FC', padding: '16px', borderRadius: '12px', border: '1px solid #ECE7F2' }}>
+              <div style={{ marginBottom: '10px' }}>
+                <strong style={{ fontSize: '12px', color: '#3A3347', display: 'block' }}>
+                  3. Calificaciones de los estudiantes ({estudiantes.length} alumnos)
+                </strong>
+                <small style={{ fontSize: '10px', color: '#766F87' }}>
+                  Las notas registradas se conservan automáticamente. Haz clic para cambiar la marca o corregir la calificación individual.
+                </small>
+              </div>
+
+              {estudiantes.length === 0 ? (
+                <div style={{ padding: '20px', textAlign: 'center', color: '#766F87', fontSize: '11px' }}>
+                  No hay estudiantes asignados en esta evaluación o aula.
+                </div>
+              ) : (
+                <div style={{ overflowX: 'auto', border: '1px solid #E5DFED', borderRadius: '8px', background: '#fff' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '11px' }}>
+                    <thead>
+                      <tr style={{ background: '#F5F2F8', borderBottom: '1px solid #E5DFED', textAlign: 'left' }}>
+                        <th style={{ padding: '8px 10px', fontWeight: 700 }}>Estudiante</th>
+                        {criterios.map((c, cIdx) => (
+                          <th key={cIdx} style={{ padding: '8px 10px', fontWeight: 700, minWidth: '170px' }}>
+                            Criterio {cIdx + 1}
+                            <span style={{ display: 'block', fontSize: '9px', fontWeight: 400, color: '#766F87' }}>
+                              {c.descripcion.slice(0, 30)}...
+                            </span>
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {estudiantes.map((st) => (
+                        <tr key={st.id} style={{ borderBottom: '1px solid #EFEBF4' }}>
+                          <td style={{ padding: '8px 10px', whiteSpace: 'nowrap' }}>
+                            <strong>
+                              {st.apellidos}, {st.nombres}
+                            </strong>
+                            <small style={{ display: 'block', color: '#766F87', fontSize: '9px' }}>
+                              {st.codigo || 'Sin código'}
+                            </small>
+                          </td>
+                          {criterios.map((crit, cIdx) => {
+                            const keyWithId = crit.id ? `${st.id}_${crit.id}` : null;
+                            const keyWithIdx = `${st.id}_idx_${cIdx}`;
+                            const current = (keyWithId && resultadosMap[keyWithId]) || resultadosMap[keyWithIdx] || {
+                              marca: 'LOGRADO',
+                              nivelLogro: '',
+                              observaciones: '',
+                            };
+                            const critKey = crit.id || `idx_${cIdx}`;
+
+                            return (
+                              <td key={cIdx} style={{ padding: '8px 10px' }}>
+                                <div style={{ display: 'flex', gap: '4px', marginBottom: '6px' }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSetStudentResult(st.id, critKey, 'LOGRADO')}
+                                    style={{
+                                      padding: '3px 7px',
+                                      fontSize: '9px',
+                                      fontWeight: 700,
+                                      borderRadius: '5px',
+                                      border: '1px solid',
+                                      cursor: 'pointer',
+                                      borderColor: current.marca === 'LOGRADO' ? '#2F7249' : '#D5CDE0',
+                                      background: current.marca === 'LOGRADO' ? '#E8F5E9' : '#fff',
+                                      color: current.marca === 'LOGRADO' ? '#1E5834' : '#635B74',
+                                    }}
+                                  >
+                                    Logrado
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSetStudentResult(st.id, critKey, 'NO_LOGRADO')}
+                                    style={{
+                                      padding: '3px 7px',
+                                      fontSize: '9px',
+                                      fontWeight: 700,
+                                      borderRadius: '5px',
+                                      border: '1px solid',
+                                      cursor: 'pointer',
+                                      borderColor: current.marca === 'NO_LOGRADO' ? '#C23D3D' : '#D5CDE0',
+                                      background: current.marca === 'NO_LOGRADO' ? '#FFEBEE' : '#fff',
+                                      color: current.marca === 'NO_LOGRADO' ? '#A12626' : '#635B74',
+                                    }}
+                                  >
+                                    No logrado
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSetStudentResult(st.id, critKey, 'NO_OBSERVADO')}
+                                    style={{
+                                      padding: '3px 7px',
+                                      fontSize: '9px',
+                                      fontWeight: 700,
+                                      borderRadius: '5px',
+                                      border: '1px solid',
+                                      cursor: 'pointer',
+                                      borderColor: current.marca === 'NO_OBSERVADO' ? '#7A738A' : '#D5CDE0',
+                                      background: current.marca === 'NO_OBSERVADO' ? '#F0ECF4' : '#fff',
+                                      color: current.marca === 'NO_OBSERVADO' ? '#4A4356' : '#635B74',
+                                    }}
+                                  >
+                                    N/O
+                                  </button>
+                                </div>
+                                <div style={{ display: 'flex', gap: '4px' }}>
+                                  <select
+                                    value={current.nivelLogro || ''}
+                                    onChange={(e) => handleSetStudentResult(st.id, critKey, current.marca, e.target.value)}
+                                    style={{
+                                      height: '24px',
+                                      fontSize: '9px',
+                                      borderRadius: '4px',
+                                      border: '1px solid #DDD7E3',
+                                      padding: '0 4px',
+                                    }}
+                                  >
+                                    <option value="">Nivel</option>
+                                    <option value="AD">AD</option>
+                                    <option value="A">A</option>
+                                    <option value="B">B</option>
+                                    <option value="C">C</option>
+                                  </select>
+                                  <input
+                                    value={current.observaciones || ''}
+                                    onChange={(e) => handleSetStudentResult(st.id, critKey, current.marca, current.nivelLogro, e.target.value)}
+                                    placeholder="Obs..."
+                                    style={{
+                                      height: '24px',
+                                      flex: 1,
+                                      fontSize: '9px',
+                                      borderRadius: '4px',
+                                      border: '1px solid #DDD7E3',
+                                      padding: '0 6px',
+                                    }}
+                                  />
+                                </div>
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+
+            {/* Acciones del modal */}
+            <div className="modal-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
+              <Button variant="secondary" onClick={onClose} disabled={saving}>
+                Cancelar
+              </Button>
+              <Button icon="check" onClick={handleSave} disabled={saving}>
+                {saving ? 'Guardando en PostgreSQL...' : 'Guardar cambios'}
+              </Button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// 4. EVALUACIONES
 function EvaluationsPage({
   go,
   aulas,
   areas,
   evaluaciones,
+  onUpdated,
 }: {
   go: (p: Page) => void;
   aulas: any[];
   areas: any[];
   evaluaciones: any[];
+  onUpdated?: (msg: string) => void;
 }) {
   const [search, setSearch] = useState('');
   const [aulaFilter, setAulaFilter] = useState('ALL');
   const [areaFilter, setAreaFilter] = useState('ALL');
+  const [editingEvalId, setEditingEvalId] = useState<number | null>(null);
 
   const filtered = useMemo(() => {
     return evaluaciones.filter((e) => {
@@ -1893,6 +2394,7 @@ function EvaluationsPage({
                   <th>Estudiantes</th>
                   <th>Criterios</th>
                   <th>Estado</th>
+                  <th style={{ textAlign: 'center' }}>Acciones</th>
                 </tr>
               </thead>
               <tbody>
@@ -1919,6 +2421,16 @@ function EvaluationsPage({
                         {e.estado}
                       </Badge>
                     </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        icon="edit"
+                        onClick={() => setEditingEvalId(e.id)}
+                      >
+                        Editar
+                      </Button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -1926,6 +2438,19 @@ function EvaluationsPage({
           </div>
         )}
       </section>
+
+      {editingEvalId && (
+        <EditEvaluationModal
+          evaluacionId={editingEvalId}
+          aulas={aulas}
+          areas={areas}
+          onClose={() => setEditingEvalId(null)}
+          onSaved={(msg) => {
+            setEditingEvalId(null);
+            if (onUpdated) onUpdated(msg);
+          }}
+        />
+      )}
     </>
   );
 }
@@ -1943,6 +2468,7 @@ function Analysis({
   onSelectStudentId,
   onViewAlertStudents,
   onPlanReinforcement,
+  onPlanGroupReinforcement,
 }: {
   go: (p: Page) => void;
   aulas: any[];
@@ -1955,16 +2481,44 @@ function Analysis({
   onSelectStudentId: (id: number) => void;
   onViewAlertStudents: (studentIds: number[], title: string) => void;
   onPlanReinforcement: (studentId: number) => void;
+  onPlanGroupReinforcement?: (preset: any) => void;
 }) {
   const [tab, setTab] = useState<'group' | 'individual'>(initialTab);
   const [aulaFilter, setAulaFilter] = useState('ALL');
   const [areaFilter, setAreaFilter] = useState('ALL');
 
+  const [analisisGrupal, setAnalisisGrupal] = useState<any>(null);
+  const [loadingGrupal, setLoadingGrupal] = useState(false);
+
   useEffect(() => {
     setTab(initialTab);
   }, [initialTab]);
 
-  // Agrupar alertas por criterio/título para mostrar en la vista grupal + lista de estudiantes afectados
+  useEffect(() => {
+    let active = true;
+    async function fetchGrupal() {
+      setLoadingGrupal(true);
+      try {
+        const aId = aulaFilter !== 'ALL' ? Number(aulaFilter) : undefined;
+        const ar = areas.find((a) => a.nombre === areaFilter);
+        const arId = areaFilter !== 'ALL' && ar ? ar.id : undefined;
+        const res = await api.getDocenteAnalisisGrupal(aId, arId);
+        if (active && res.success && res.data) {
+          setAnalisisGrupal(res.data);
+        }
+      } catch (err) {
+        console.error('Error fetching group analysis:', err);
+      } finally {
+        if (active) setLoadingGrupal(false);
+      }
+    }
+    fetchGrupal();
+    return () => {
+      active = false;
+    };
+  }, [aulaFilter, areaFilter, areas]);
+
+  // Alertas individuales críticas por 2+ NO_LOGRADO consecutivos
   const groupedAlerts = useMemo(() => {
     const map = new Map<string, { title: string; area: string; detail: string; level: string; studentIds: number[]; count: number }>();
     for (const al of alertas) {
@@ -1993,11 +2547,17 @@ function Analysis({
     return students.filter((s) => aulaFilter === 'ALL' || String(s.aula_id || '') === aulaFilter);
   }, [students, aulaFilter]);
 
-  const totalNiveles = (resumenData?.niveles || []).reduce((acc: number, n: any) => acc + Number(n.total || 0), 0);
-  const logradosCount = (resumenData?.niveles || [])
-    .filter((n: any) => n.nivel === 'AD' || n.nivel === 'A')
-    .reduce((acc: number, n: any) => acc + Number(n.total || 0), 0);
-  const logroPct = totalNiveles > 0 ? Math.round((logradosCount / totalNiveles) * 100) : 0;
+  // Métricas calculadas sobre estudiantes realmente evaluados
+  const logroGrupalPct =
+    analisisGrupal?.logroGrupalPromedio !== undefined
+      ? analisisGrupal.logroGrupalPromedio
+      : 0;
+
+  const totalEvaluados = analisisGrupal?.totalEvaluadosUnicos || 0;
+  const totalAula = analisisGrupal?.totalEstudiantesAula || filteredStudents.length;
+
+  const dificultadesGrupales = analisisGrupal?.dificultadesGrupales || [];
+  const dificultadesIndividuales = analisisGrupal?.dificultadesIndividuales || [];
 
   return (
     <>
@@ -2023,7 +2583,7 @@ function Analysis({
       </PageHeader>
       <div className="analysis-tabs">
         <button className={tab === 'group' ? 'active' : ''} onClick={() => setTab('group')}>
-          <Icon name="users" /> Análisis grupal
+          <Icon name="users" /> Análisis grupal {loadingGrupal && '...'}
         </button>
         <button className={tab === 'individual' ? 'active' : ''} onClick={() => setTab('individual')}>
           <Icon name="users" /> Análisis individual ({filteredStudents.length})
@@ -2034,14 +2594,23 @@ function Analysis({
         <>
           <div className="analysis-hero">
             <div>
-              <Badge tone="red">
-                <Icon name="warning" size={13} /> {groupedAlerts.length} alerta(s) requieren revisión
+              <Badge tone={dificultadesGrupales.length > 0 ? 'red' : 'green'}>
+                <Icon name="warning" size={13} />{' '}
+                {dificultadesGrupales.length > 0
+                  ? `${dificultadesGrupales.length} dificultad(es) compartida(s) en el aula`
+                  : 'Sin dificultades grupales críticas'}
               </Badge>
-              <h2>{groupedAlerts.length > 0 ? 'Hay criterios que necesitan tu atención' : 'Sin alertas críticas pendientes'}</h2>
-              <p>Las alertas se generan automáticamente cuando un estudiante presenta dos resultados "No logrado" consecutivos en un mismo criterio.</p>
+              <h2>
+                {dificultadesGrupales.length > 0
+                  ? 'Hay criterios que requieren apoyo grupal en el aula'
+                  : 'Desempeño general favorable en los criterios evaluados'}
+              </h2>
+              <p>
+                Calculado sobre <strong>{totalEvaluados} estudiantes evaluados</strong> de {totalAula} alumnos en {aulaFilter === 'ALL' ? 'todas las aulas' : 'el aula seleccionada'}. Se detecta apoyo grupal cuando varios estudiantes comparten la misma dificultad.
+              </p>
             </div>
             <div className="analysis-ring">
-              <strong>{logroPct}%</strong>
+              <strong>{logroGrupalPct}%</strong>
               <span>logro grupal</span>
             </div>
           </div>
@@ -2050,62 +2619,244 @@ function Analysis({
             <section className="card chart-card wide">
               <div className="card-heading">
                 <div>
-                  <h2>Logro por criterio</h2>
-                  <p>Porcentaje de estudiantes que alcanzó el criterio</p>
+                  <h2>Logro real por criterio evaluado</h2>
+                  <p>Porcentaje calculado exclusivamente sobre los alumnos que cuentan con evaluación</p>
                 </div>
               </div>
-              <MiniBars criterios={resumenData?.criteriosDesempeno || []} />
+              <MiniBars
+                criterios={
+                  analisisGrupal?.criterios?.map((c: any) => ({
+                    descripcion: c.criterioDescripcion,
+                    total: c.totalEvaluados,
+                    logrados: c.logrados,
+                  })) || resumenData?.criteriosDesempeno || []
+                }
+              />
             </section>
             <section className="card difficulty-card">
               <div className="card-heading">
                 <div>
-                  <h2>Mayor dificultad</h2>
-                  <p>Ordenado por prioridad</p>
+                  <h2>Dificultades compartidas</h2>
+                  <p>Ordenado por porcentaje y alumnos afectados</p>
                 </div>
               </div>
-              {groupedAlerts.length === 0 ? (
+              {dificultadesGrupales.length === 0 ? (
                 <p style={{ fontSize: '11px', color: '#766F87', marginTop: '14px' }}>
-                  No se detectaron dificultades repetidas hasta el momento.
+                  No se detectaron dificultades compartidas en el aula para esta selección.
                 </p>
               ) : (
-                groupedAlerts.map((a, i) => (
-                  <div className="difficulty" key={a.title}>
+                dificultadesGrupales.map((d: any, i: number) => (
+                  <div className="difficulty" key={d.criterioId}>
                     <span>{i + 1}</span>
                     <div>
-                      <strong>{a.title}</strong>
-                      <small>{a.count} de {Math.max(students.length, 1)} estudiantes</small>
+                      <strong>{d.criterioDescripcion}</strong>
+                      <small>
+                        {d.noLogrados} de {d.totalEvaluados} evaluados ({d.dificultadPct}% del aula evaluada)
+                      </small>
                       <i>
-                        <b style={{ width: `${Math.min(100, Math.round((a.count / Math.max(students.length, 1)) * 100))}%` }} />
+                        <b style={{ width: `${Math.min(100, d.dificultadPct)}%`, background: d.dificultadPct >= 50 ? '#C23D3D' : '#D9822B' }} />
                       </i>
                     </div>
-                    <em>{Math.round((a.count / Math.max(students.length, 1)) * 100)}%</em>
+                    <em>{d.dificultadPct}%</em>
                   </div>
                 ))
               )}
             </section>
           </div>
 
+          {/* DIFICULTADES GRUPALES: REFIEREN APOYO GRUPAL */}
           <section className="section-block">
             <div className="section-title">
               <div>
-                <h2>Alertas para validar</h2>
-                <p>Haz clic en «Ver estudiantes» para filtrar el listado con los alumnos afectados por cada alerta.</p>
+                <h2>Dificultades grupales que requieren apoyo pedagógico grupal</h2>
+                <p>
+                  Criterios donde múltiples estudiantes del aula presentan dificultades. Requieren retroalimentación y actividades colectivas.
+                </p>
               </div>
             </div>
-            {groupedAlerts.length === 0 ? (
+            {dificultadesGrupales.length === 0 ? (
               <div className="card" style={{ padding: '22px', textAlign: 'center', color: '#766F87', fontSize: '12px' }}>
-                No hay alertas activas por validar en PostgreSQL.
+                No hay dificultades que requieran apoyo grupal en los criterios evaluados.
               </div>
             ) : (
               <div className="alerts-list">
-                {groupedAlerts.map((a, i) => (
-                  <article className="smart-alert" key={a.title}>
-                    <span className={a.level === 'ALTA' || i === 0 ? 'high' : 'medium'}>
+                {dificultadesGrupales.map((diff: any) => (
+                  <article className="smart-alert" key={diff.criterioId}>
+                    <span className={diff.prioridad === 'ALTA' ? 'high' : 'medium'}>
                       <Icon name="warning" />
                     </span>
                     <div className="alert-main">
                       <div>
-                        <Badge tone={a.level === 'ALTA' ? 'red' : 'yellow'}>Prioridad {a.level.toLowerCase()}</Badge>
+                        <Badge tone={diff.prioridad === 'ALTA' ? 'red' : 'yellow'}>
+                          Apoyo Grupal · Prioridad {diff.prioridad.toLowerCase()}
+                        </Badge>
+                        <small>{diff.areaNombre}</small>
+                      </div>
+                      <h3>{diff.criterioDescripcion}</h3>
+                      <p>
+                        <strong>{diff.noLogrados} de {diff.totalEvaluados} estudiantes evaluados ({diff.dificultadPct}%)</strong> no lograron este criterio.
+                      </p>
+                      {/* Lista de estudiantes afectados */}
+                      <div style={{ marginTop: '8px' }}>
+                        <span style={{ fontSize: '10px', fontWeight: 600, color: '#574E69' }}>
+                          Estudiantes con dificultad en este criterio:
+                        </span>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '4px' }}>
+                          {diff.estudiantesAfectados.map((st: any) => (
+                            <span
+                              key={st.id}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                background: '#FFF0F0',
+                                color: '#9E2A2B',
+                                border: '1px solid #F5C2C7',
+                                borderRadius: '12px',
+                                padding: '2px 8px',
+                                fontSize: '10px',
+                                fontWeight: 600,
+                              }}
+                            >
+                              <i style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#C23D3D' }} />
+                              {st.apellidos}, {st.nombres}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="alert-count">
+                      <strong>{diff.noLogrados}</strong>
+                      <span>afectados</span>
+                    </div>
+                    <div className="alert-actions">
+                      <Button
+                        variant="secondary"
+                        onClick={() =>
+                          onViewAlertStudents(
+                            diff.estudiantesAfectados.map((e: any) => e.id),
+                            diff.criterioDescripcion
+                          )
+                        }
+                      >
+                        Ver estudiantes
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          if (onPlanGroupReinforcement) {
+                            onPlanGroupReinforcement({
+                              tipo: 'GRUPAL',
+                              criterioId: diff.criterioId,
+                              criterioDescripcion: diff.criterioDescripcion,
+                              areaId: diff.areaId,
+                              areaNombre: diff.areaNombre,
+                              justificacion: `${diff.noLogrados} de ${diff.totalEvaluados} estudiantes evaluados (${diff.dificultadPct}%) presentaron dificultades en este criterio en el aula.`,
+                              estudiantesAfectados: diff.estudiantesAfectados,
+                            });
+                          } else {
+                            go('Actividades de refuerzo');
+                          }
+                        }}
+                      >
+                        Planificar refuerzo grupal
+                      </Button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+
+          {/* DIFICULTADES INDIVIDUALES FOCALIZADAS */}
+          {dificultadesIndividuales.length > 0 && (
+            <section className="section-block">
+              <div className="section-title">
+                <div>
+                  <h2>Dificultades individuales focalizadas</h2>
+                  <p>Criterios donde solo 1 o 2 alumnos específicos requieren acompañamiento personalizado.</p>
+                </div>
+              </div>
+              <div className="alerts-list">
+                {dificultadesIndividuales.map((diff: any) => (
+                  <article className="smart-alert" key={`ind_${diff.criterioId}`}>
+                    <span className="medium">
+                      <Icon name="users" />
+                    </span>
+                    <div className="alert-main">
+                      <div>
+                        <Badge tone="purple">Apoyo individualizado</Badge>
+                        <small>{diff.areaNombre}</small>
+                      </div>
+                      <h3>{diff.criterioDescripcion}</h3>
+                      <p>
+                        Afecta a {diff.noLogrados} estudiante(s) ({diff.dificultadPct}% de los evaluados).
+                      </p>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '4px' }}>
+                        {diff.estudiantesAfectados.map((st: any) => (
+                          <span
+                            key={st.id}
+                            style={{
+                              background: '#F0ECF8',
+                              color: '#5C3882',
+                              border: '1px solid #D6CCE4',
+                              borderRadius: '12px',
+                              padding: '2px 8px',
+                              fontSize: '10px',
+                              fontWeight: 600,
+                            }}
+                          >
+                            {st.apellidos}, {st.nombres}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="alert-count">
+                      <strong>{diff.noLogrados}</strong>
+                      <span>alumno(s)</span>
+                    </div>
+                    <div className="alert-actions">
+                      <Button
+                        variant="secondary"
+                        onClick={() => {
+                          if (diff.estudiantesAfectados[0]) onSelectStudentId(diff.estudiantesAfectados[0].id);
+                          setTab('individual');
+                        }}
+                      >
+                        Ver análisis individual
+                      </Button>
+                      <Button
+                        onClick={() => {
+                          if (diff.estudiantesAfectados[0]) onPlanReinforcement(diff.estudiantesAfectados[0].id);
+                          else go('Actividades de refuerzo');
+                        }}
+                      >
+                        Planificar apoyo
+                      </Button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* ALERTAS CRÍTICAS POR REPETICIÓN (2+ EVALUACIONES NO LOGRADO) */}
+          {groupedAlerts.length > 0 && (
+            <section className="section-block">
+              <div className="section-title">
+                <div>
+                  <h2>Alertas críticas por dificultad recurrente (2+ evaluaciones)</h2>
+                  <p>Casos donde un alumno ha presentado resultados desfavorable de manera consecutiva.</p>
+                </div>
+              </div>
+              <div className="alerts-list">
+                {groupedAlerts.map((a, i) => (
+                  <article className="smart-alert" key={`crit_${a.title}_${i}`}>
+                    <span className="high">
+                      <Icon name="warning" />
+                    </span>
+                    <div className="alert-main">
+                      <div>
+                        <Badge tone="red">Alerta Crítica</Badge>
                         <small>{a.area}</small>
                       </div>
                       <h3>{a.title}</h3>
@@ -2113,7 +2864,7 @@ function Analysis({
                     </div>
                     <div className="alert-count">
                       <strong>{a.count}</strong>
-                      <span>estudiante(s)</span>
+                      <span>alumno(s)</span>
                     </div>
                     <div className="alert-actions">
                       <Button variant="secondary" onClick={() => onViewAlertStudents(a.studentIds, a.title)}>
@@ -2131,8 +2882,8 @@ function Analysis({
                   </article>
                 ))}
               </div>
-            )}
-          </section>
+            </section>
+          )}
         </>
       ) : (
         <IndividualAnalysis
@@ -2338,49 +3089,264 @@ function IndividualAnalysis({
   );
 }
 
+function UpdateReinforcementModal({
+  recomendacion,
+  onClose,
+  onSaved,
+}: {
+  recomendacion: any;
+  onClose: () => void;
+  onSaved: (msg: string) => void;
+}) {
+  const [estado, setEstado] = useState<'PROPUESTA' | 'ACEPTADA' | 'APLICADA' | 'DESCARTADA'>(
+    recomendacion.estado || 'APLICADA'
+  );
+  const [resultadoAvance, setResultadoAvance] = useState<'SUPERADO' | 'EN_PROCESO' | 'NO_SUPERADO'>(
+    recomendacion.resultadoAvance || 'SUPERADO'
+  );
+  const [fechaAplicacion, setFechaAplicacion] = useState(
+    recomendacion.fecha_aplicacion ? String(recomendacion.fecha_aplicacion).slice(0, 10) : new Date().toISOString().slice(0, 10)
+  );
+  const [observaciones, setObservaciones] = useState(
+    recomendacion.observacionesDocente || recomendacion.observaciones || ''
+  );
+  const [saving, setSaving] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+
+  async function handleSave() {
+    setSaving(true);
+    setErrorMsg('');
+    try {
+      const res = await api.updateDocenteRecomendacion(recomendacion.id, {
+        estado,
+        resultadoAvance,
+        fechaAplicacion,
+        observaciones: observaciones.trim(),
+      });
+      if (res.success) {
+        onSaved('Seguimiento y resultado del refuerzo actualizados en PostgreSQL');
+      } else {
+        setErrorMsg(res.message || 'Error al actualizar el avance del refuerzo.');
+      }
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Error de comunicación.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="modal-backdrop">
+      <div className="comparison-modal" style={{ maxWidth: '540px', width: '90%' }}>
+        <button type="button" className="modal-close" onClick={onClose} disabled={saving}>
+          ✕
+        </button>
+        <span className="badge purple">Seguimiento de refuerzo</span>
+        <h1 style={{ fontSize: '18px', margin: '6px 0 10px' }}>Registrar resultado y avance del refuerzo</h1>
+        <p style={{ fontSize: '11px', color: '#766F87', margin: '0 0 16px' }}>
+          Documenta si los estudiantes superaron la dificultad observada tras aplicar la actividad.
+        </p>
+
+        {errorMsg && <div className="auth-alert error" style={{ marginBottom: '12px' }}>{errorMsg}</div>}
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div style={{ background: '#FAF9FC', padding: '12px', borderRadius: '10px', border: '1px solid #ECE7F2' }}>
+            <strong style={{ fontSize: '12px', color: '#3A3347', display: 'block' }}>{recomendacion.titulo}</strong>
+            <small style={{ color: '#766F87', fontSize: '10px' }}>
+              Criterio: {recomendacion.criterio_descripcion || 'Refuerzo pedagógico'}
+            </small>
+          </div>
+
+          <label style={{ fontSize: '11px', fontWeight: 600, display: 'flex', flexDirection: 'column', gap: '5px' }}>
+            Estado de la actividad
+            <select
+              value={estado}
+              onChange={(e) => setEstado(e.target.value as any)}
+              style={{ height: '38px', borderRadius: '8px', border: '1px solid #DDD7E3', padding: '0 10px', fontSize: '11px' }}
+            >
+              <option value="APLICADA">Aplicada (completada en aula)</option>
+              <option value="ACEPTADA">Aceptada (en planificación)</option>
+              <option value="DESCARTADA">Descartada</option>
+            </select>
+          </label>
+
+          <label style={{ fontSize: '11px', fontWeight: 600, display: 'flex', flexDirection: 'column', gap: '5px' }}>
+            Resultado obtenido tras el refuerzo (antes vs. después)
+            <select
+              value={resultadoAvance}
+              onChange={(e) => setResultadoAvance(e.target.value as any)}
+              style={{ height: '38px', borderRadius: '8px', border: '1px solid #DDD7E3', padding: '0 10px', fontSize: '11px' }}
+            >
+              <option value="SUPERADO">Superado (Los estudiantes alcanzaron el logro esperado)</option>
+              <option value="EN_PROCESO">En proceso (Muestran mejoras parciales, requiere práctica adicional)</option>
+              <option value="NO_SUPERADO">No superado (Persiste la dificultad, requiere apoyo diferenciado)</option>
+            </select>
+          </label>
+
+          <label style={{ fontSize: '11px', fontWeight: 600, display: 'flex', flexDirection: 'column', gap: '5px' }}>
+            Fecha de aplicación
+            <input
+              type="date"
+              value={fechaAplicacion}
+              onChange={(e) => setFechaAplicacion(e.target.value)}
+              style={{ height: '38px', borderRadius: '8px', border: '1px solid #DDD7E3', padding: '0 10px', fontSize: '11px' }}
+            />
+          </label>
+
+          <label style={{ fontSize: '11px', fontWeight: 600, display: 'flex', flexDirection: 'column', gap: '5px' }}>
+            Notas cualitativas y comparación de logros (antes vs. después)
+            <textarea
+              value={observaciones}
+              onChange={(e) => setObservaciones(e.target.value)}
+              placeholder="Describe cómo respondieron los alumnos a la actividad y qué mejoras se observaron..."
+              style={{ height: '70px', borderRadius: '8px', border: '1px solid #DDD7E3', padding: '8px 10px', fontSize: '11px' }}
+            />
+          </label>
+
+          <div className="modal-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '6px' }}>
+            <Button variant="secondary" onClick={onClose} disabled={saving}>
+              Cancelar
+            </Button>
+            <Button icon="check" onClick={handleSave} disabled={saving}>
+              {saving ? 'Guardando...' : 'Guardar avance en PostgreSQL'}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // 7. ACTIVIDADES DE REFUERZO
 function Reinforcement({
+  aulas,
+  areas,
   students,
   selectedStudentId,
   recomendaciones,
+  preset,
+  onClearPreset,
   onSaved,
 }: {
+  aulas?: any[];
+  areas?: any[];
   students: any[];
   selectedStudentId: number | null;
   recomendaciones: any[];
+  preset?: any;
+  onClearPreset?: () => void;
   onSaved: (msg: string) => void;
 }) {
-  const [targetStudentId, setTargetStudentId] = useState<number | ''>(selectedStudentId || students[0]?.id || '');
-  const [editing, setEditing] = useState(true);
-  const [titulo, setTitulo] = useState('Lectura breve: encontrar la idea central');
-  const [descripcion, setDescripcion] = useState(
-    'Leer un texto corto y responder preguntas sobre su contenido, diferenciando la idea principal de los detalles que la apoyan.'
-  );
+  const [activeTab, setActiveTab] = useState<'propuestas' | 'registradas'>('propuestas');
+  const [aulaFilter, setAulaFilter] = useState('ALL');
+  const [areaFilter, setAreaFilter] = useState('ALL');
+
+  const [sugerencias, setSugerencias] = useState<any[]>([]);
+  const [loadingSugerencias, setLoadingSugerencias] = useState(false);
+  const [selectedPropuestaIndex, setSelectedPropuestaIndex] = useState<number>(0);
+
+  // Formulario de edición y adaptación de propuesta
+  const [titulo, setTitulo] = useState('');
+  const [proposito, setProposito] = useState('');
+  const [instrucciones, setInstrucciones] = useState('');
+  const [materiales, setMateriales] = useState('');
+  const [duracionMinutos, setDuracionMinutos] = useState<number>(45);
+  const [justificacion, setJustificacion] = useState('');
   const [fechaAplicacion, setFechaAplicacion] = useState(new Date().toISOString().slice(0, 10));
   const [observaciones, setObservaciones] = useState('');
+  const [tipo, setTipo] = useState<'GRUPAL' | 'INDIVIDUAL'>('GRUPAL');
+  const [estudiantesAsignados, setEstudiantesAsignados] = useState<any[]>([]);
+  const [criterioId, setCriterioId] = useState<number | null>(null);
+
+  const [editing, setEditing] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [updatingRec, setUpdatingRec] = useState<any | null>(null);
 
+  // Cargar sugerencias inteligentes basadas en dificultades reales de evaluaciones
   useEffect(() => {
-    if (selectedStudentId) setTargetStudentId(selectedStudentId);
-    else if (!targetStudentId && students.length > 0) setTargetStudentId(students[0].id);
-  }, [selectedStudentId, students]);
+    let active = true;
+    async function loadSugerencias() {
+      setLoadingSugerencias(true);
+      try {
+        const aId = aulaFilter !== 'ALL' ? Number(aulaFilter) : undefined;
+        const ar = areas ? areas.find((a) => a.nombre === areaFilter) : undefined;
+        const arId = areaFilter !== 'ALL' && ar ? ar.id : undefined;
+        const res = await api.getDocenteSugerenciasRefuerzo(aId, arId);
+        if (active && res.success && res.data) {
+          setSugerencias(res.data);
+          if (res.data.length > 0 && !preset) {
+            populateFormFromSugerencia(res.data[0]);
+          }
+        }
+      } catch (err) {
+        console.error('Error al cargar sugerencias de refuerzo:', err);
+      } finally {
+        if (active) setLoadingSugerencias(false);
+      }
+    }
+    loadSugerencias();
+    return () => {
+      active = false;
+    };
+  }, [aulaFilter, areaFilter, areas]);
 
-  const currentStudent = students.find((s) => s.id === Number(targetStudentId)) || students[0];
+  // Si viene un preset desde Análisis grupal o individual
+  useEffect(() => {
+    if (preset) {
+      setActiveTab('propuestas');
+      setTipo(preset.tipo || 'GRUPAL');
+      if (preset.criterioId) setCriterioId(preset.criterioId);
+      if (preset.titulo) setTitulo(preset.titulo);
+      else setTitulo(`Taller de refuerzo: ${preset.criterioDescripcion || 'Competencia evaluada'}`);
+      setProposito(
+        `Consolidar y nivelar el desempeño en: "${preset.criterioDescripcion || 'el criterio evaluado'}" mediante actividades guiadas y retroalimentación.`
+      );
+      setInstrucciones(
+        `1. Modelado explicativo del criterio con ejemplos prácticos.\n2. Práctica guiada en parejas o pequeños grupos.\n3. Verificación de avance y retroalimentación formativa.`
+      );
+      setMateriales('Fichas de trabajo adaptadas, organizadores gráficos y pizarra.');
+      setDuracionMinutos(preset.tipo === 'GRUPAL' ? 45 : 30);
+      setJustificacion(preset.justificacion || 'Refuerzo planificado a partir de resultados observados en evaluaciones.');
+      setEstudiantesAsignados(preset.estudiantesAfectados || []);
+      if (onClearPreset) onClearPreset();
+    }
+  }, [preset]);
+
+  function populateFormFromSugerencia(sug: any) {
+    setTipo(sug.tipo || 'GRUPAL');
+    setCriterioId(sug.criterioId || null);
+    setTitulo(sug.titulo || '');
+    setProposito(sug.proposito || '');
+    setInstrucciones(sug.instrucciones || '');
+    setMateriales(sug.materiales || '');
+    setDuracionMinutos(sug.duracionMinutos || 45);
+    setJustificacion(sug.justificacion || '');
+    setEstudiantesAsignados(sug.estudiantesAfectados || []);
+    setObservaciones('');
+  }
 
   async function handleSaveRecomendacion() {
-    if (!currentStudent) return;
+    if (!titulo.trim()) return;
     setSaving(true);
     try {
       const res = await api.createDocenteRecomendacion({
-        estudianteId: currentStudent.id,
-        titulo,
-        descripcion,
-        estado: 'ACEPTADA',
+        tipo,
+        criterioId,
+        titulo: titulo.trim(),
+        descripcion: instrucciones.trim() || 'Actividad de refuerzo pedagógico',
+        proposito: proposito.trim(),
+        materiales: materiales.trim(),
+        duracionMinutos,
+        justificacion,
         fechaAplicacion,
-        observaciones,
+        estado: 'ACEPTADA',
+        resultadoAvance: 'EN_PROCESO',
+        observaciones: observaciones.trim(),
+        estudiantesAfectados: estudiantesAsignados,
       });
       if (res.success) {
-        onSaved('Actividad de refuerzo guardada en PostgreSQL');
+        onSaved('Actividad de refuerzo guardada y asignada en PostgreSQL');
+        setActiveTab('registradas');
       }
     } finally {
       setSaving(false);
@@ -2389,100 +3355,376 @@ function Reinforcement({
 
   return (
     <>
-      <PageHeader title="Actividades de refuerzo" subtitle="Organiza apoyos editables y guárdalos en PostgreSQL">
-        <label className="select-wrap">
-          <select value={targetStudentId} onChange={(e) => setTargetStudentId(Number(e.target.value))}>
-            {students.map((st) => (
-              <option key={st.id} value={st.id}>{getStudentFullName(st)} ({getStudentClassroomLabel(st)})</option>
-            ))}
-          </select>
-          <Icon name="chevron" size={15} />
-        </label>
+      <PageHeader title="Actividades de refuerzo" subtitle="Propuestas pedagógicas adaptadas a partir de resultados reales de evaluaciones">
+        {aulas && (
+          <label className="select-wrap">
+            <select value={aulaFilter} onChange={(e) => setAulaFilter(e.target.value)}>
+              <option value="ALL">Todas las aulas</option>
+              {aulas.map((a) => (
+                <option key={a.id} value={String(a.id)}>{a.grado} {a.seccion}</option>
+              ))}
+            </select>
+            <Icon name="chevron" size={15} />
+          </label>
+        )}
       </PageHeader>
 
-      {currentStudent && (
-        <div className="reinforce-context">
-          <div className="context-student">
-            <Avatar student={currentStudent} size="lg" />
-            <div>
-              <small>Estudiante seleccionado</small>
-              <h2>{getStudentFullName(currentStudent)}</h2>
-              <span>{getStudentClassroomLabel(currentStudent)} · {currentStudent.codigo}</span>
-            </div>
-          </div>
-          <div className="context-criterion">
-            <small>Criterio observado</small>
-            <strong>{currentStudent.ultimo_criterio || 'Seguimiento pedagógico general'}</strong>
-          </div>
-        </div>
-      )}
+      <div className="analysis-tabs" style={{ marginBottom: '20px' }}>
+        <button className={activeTab === 'propuestas' ? 'active' : ''} onClick={() => setActiveTab('propuestas')}>
+          <Icon name="spark" /> Propuestas inteligentes de refuerzo ({sugerencias.length})
+        </button>
+        <button className={activeTab === 'registradas' ? 'active' : ''} onClick={() => setActiveTab('registradas')}>
+          <Icon name="clipboard" /> Actividades asignadas y avance ({recomendaciones.length})
+        </button>
+      </div>
 
-      <div className="reinforce-layout">
-        <section className="card evidence-panel">
-          <div className="panel-label">
-            <span>1</span>
-            <div>
-              <h2>Actividades registradas</h2>
-              <p>Historial real de refuerzos en PostgreSQL ({recomendaciones.length}).</p>
+      {activeTab === 'propuestas' ? (
+        <div className="reinforce-layout" style={{ gridTemplateColumns: 'minmax(320px, 1fr) minmax(420px, 1.4fr)', gap: '18px' }}>
+          {/* Panel izquierdo: Lista de propuestas generadas */}
+          <section className="card evidence-panel">
+            <div className="panel-label">
+              <span>1</span>
+              <div>
+                <h2>Dificultades detectadas para refuerzo</h2>
+                <p>Propuestas pedagógicas generadas automáticamente desde tus evaluaciones en PostgreSQL.</p>
+              </div>
             </div>
-          </div>
-          {recomendaciones.length === 0 ? (
-            <p style={{ fontSize: '11px', color: '#766F87' }}>Aún no hay actividades guardadas. Acepta la propuesta de la derecha para registrar una.</p>
-          ) : (
-            <div className="evidence-timeline">
-              {recomendaciones.slice(0, 6).map((rec) => (
-                <div key={rec.id}>
-                  <i />
-                  <time>{formatDateShort(rec.fecha_aplicacion || rec.created_at)}</time>
-                  <strong>{rec.estudiante_nombres} {rec.estudiante_apellidos} · {rec.titulo}</strong>
-                  <Badge tone="purple">{rec.estado}</Badge>
-                  <p>{rec.descripcion}</p>
+
+            {loadingSugerencias ? (
+              <p style={{ fontSize: '11px', color: '#766F87', padding: '16px 0' }}>Cargando sugerencias de refuerzo...</p>
+            ) : sugerencias.length === 0 ? (
+              <div style={{ padding: '24px 10px', textAlign: 'center', color: '#766F87', fontSize: '11px' }}>
+                No se detectaron dificultades en evaluaciones para esta selección. Registra o edita evaluaciones para generar propuestas.
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {sugerencias.map((sug, idx) => {
+                  const isSelected = selectedPropuestaIndex === idx;
+                  return (
+                    <article
+                      key={idx}
+                      onClick={() => {
+                        setSelectedPropuestaIndex(idx);
+                        populateFormFromSugerencia(sug);
+                      }}
+                      style={{
+                        padding: '12px 14px',
+                        borderRadius: '10px',
+                        border: isSelected ? '2px solid #7C3AED' : '1px solid #E5DFED',
+                        background: isSelected ? '#FAF7FD' : '#fff',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                        <div style={{ display: 'flex', gap: '6px' }}>
+                          <Badge tone={sug.tipo === 'GRUPAL' ? 'purple' : 'blue'}>
+                            {sug.tipo === 'GRUPAL' ? 'Refuerzo Grupal' : 'Acompañamiento Individual'}
+                          </Badge>
+                          <Badge tone={sug.prioridad === 'ALTA' ? 'red' : 'yellow'}>
+                            Prioridad {sug.prioridad?.toLowerCase()}
+                          </Badge>
+                        </div>
+                        <small style={{ color: '#766F87', fontSize: '10px' }}>{sug.areaNombre}</small>
+                      </div>
+
+                      <strong style={{ fontSize: '12px', color: '#2E2838', display: 'block', marginBottom: '4px' }}>
+                        {sug.titulo}
+                      </strong>
+
+                      <p style={{ fontSize: '10px', color: '#635B74', margin: '0 0 6px', lineHeight: 1.4 }}>
+                        {sug.criterioDescripcion}
+                      </p>
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '6px' }}>
+                        <span style={{ fontSize: '9px', fontWeight: 600, color: '#9E2A2B' }}>
+                          {sug.justificacion}
+                        </span>
+                        <span style={{ fontSize: '9px', color: '#766F87' }}>
+                          {sug.estudiantesAfectados?.length || 0} alumno(s)
+                        </span>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+
+          {/* Panel derecho: Formulario estructurado para adaptar y guardar */}
+          <section className="card proposal-panel">
+            <div className="panel-label">
+              <span>2</span>
+              <div>
+                <h2>Planificación pedagógica y asignación</h2>
+                <p>Personaliza los propósitos, ejercicios y duración antes de guardarla en PostgreSQL.</p>
+              </div>
+            </div>
+
+            {/* Justificación pedagógica basada en datos reales */}
+            {justificacion && (
+              <div
+                style={{
+                  background: '#FFF8EB',
+                  border: '1px solid #F6D8A8',
+                  borderRadius: '8px',
+                  padding: '8px 12px',
+                  marginBottom: '14px',
+                  fontSize: '11px',
+                  color: '#855E15',
+                }}
+              >
+                <strong>Justificación basada en datos reales:</strong> {justificacion}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+              <button
+                type="button"
+                onClick={() => setTipo('GRUPAL')}
+                style={{
+                  padding: '5px 12px',
+                  borderRadius: '6px',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  border: '1px solid',
+                  cursor: 'pointer',
+                  borderColor: tipo === 'GRUPAL' ? '#7C3AED' : '#DDD7E3',
+                  background: tipo === 'GRUPAL' ? '#F3E8FF' : '#fff',
+                  color: tipo === 'GRUPAL' ? '#6B21A8' : '#635B74',
+                }}
+              >
+                Refuerzo grupal
+              </button>
+              <button
+                type="button"
+                onClick={() => setTipo('INDIVIDUAL')}
+                style={{
+                  padding: '5px 12px',
+                  borderRadius: '6px',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  border: '1px solid',
+                  cursor: 'pointer',
+                  borderColor: tipo === 'INDIVIDUAL' ? '#2563EB' : '#DDD7E3',
+                  background: tipo === 'INDIVIDUAL' ? '#EFF6FF' : '#fff',
+                  color: tipo === 'INDIVIDUAL' ? '#1D4ED8' : '#635B74',
+                }}
+              >
+                Acompañamiento individual
+              </button>
+            </div>
+
+            <label>
+              Nombre de la actividad *
+              <input disabled={!editing} value={titulo} onChange={(e) => setTitulo(e.target.value)} />
+            </label>
+
+            <label>
+              Propósito de aprendizaje
+              <textarea
+                disabled={!editing}
+                value={proposito}
+                onChange={(e) => setProposito(e.target.value)}
+                placeholder="¿Qué se espera que los estudiantes logren superar con esta actividad?"
+                style={{ height: '50px' }}
+              />
+            </label>
+
+            <label>
+              Instrucciones y ejercicios sugeridos
+              <textarea
+                disabled={!editing}
+                value={instrucciones}
+                onChange={(e) => setInstrucciones(e.target.value)}
+                placeholder="Pasos de la actividad, consignas y ejercicios de aplicación práctica..."
+                style={{ height: '70px' }}
+              />
+            </label>
+
+            <div className="form-grid">
+              <label>
+                Materiales o recursos
+                <input
+                  disabled={!editing}
+                  value={materiales}
+                  onChange={(e) => setMateriales(e.target.value)}
+                  placeholder="Fichas, regletas, lecturas..."
+                />
+              </label>
+              <label>
+                Duración estimada (minutos)
+                <input
+                  type="number"
+                  disabled={!editing}
+                  value={duracionMinutos}
+                  onChange={(e) => setDuracionMinutos(Number(e.target.value))}
+                />
+              </label>
+            </div>
+
+            <div className="form-grid">
+              <label>
+                Fecha prevista de aplicación
+                <input type="date" value={fechaAplicacion} onChange={(e) => setFechaAplicacion(e.target.value)} />
+              </label>
+              <label>
+                Alumnos asignados ({estudiantesAsignados.length})
+                <div
+                  style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    gap: '4px',
+                    padding: '6px',
+                    border: '1px solid #DDD7E3',
+                    borderRadius: '8px',
+                    minHeight: '40px',
+                    background: '#FAF9FC',
+                    alignItems: 'center',
+                  }}
+                >
+                  {estudiantesAsignados.length === 0 ? (
+                    <span style={{ fontSize: '10px', color: '#766F87' }}>Todo el grupo seleccionado</span>
+                  ) : (
+                    estudiantesAsignados.map((st: any) => (
+                      <span
+                        key={st.id}
+                        style={{
+                          fontSize: '9px',
+                          background: '#EAE6F3',
+                          color: '#49356A',
+                          borderRadius: '8px',
+                          padding: '2px 6px',
+                          fontWeight: 600,
+                        }}
+                      >
+                        {st.nombres} {st.apellidos}
+                      </span>
+                    ))
+                  )}
                 </div>
-              ))}
+              </label>
+            </div>
+
+            <label>
+              Observaciones adicionales del docente
+              <textarea
+                value={observaciones}
+                onChange={(e) => setObservaciones(e.target.value)}
+                placeholder="Anotaciones pedagógicas previas..."
+                style={{ height: '40px' }}
+              />
+            </label>
+
+            <div className="proposal-actions" style={{ marginTop: '16px' }}>
+              <Button variant="secondary" icon="edit" onClick={() => setEditing(!editing)}>
+                {editing ? 'Bloquear edición' : 'Editar propuesta'}
+              </Button>
+              <Button icon="check" onClick={handleSaveRecomendacion} disabled={saving || !titulo.trim()}>
+                {saving ? 'Guardando...' : 'Guardar y asignar refuerzo en PostgreSQL'}
+              </Button>
+            </div>
+          </section>
+        </div>
+      ) : (
+        /* TAB 2: ACTIVIDADES ASIGNADAS Y SEGUIMIENTO DE AVANCE */
+        <section className="card table-card" style={{ padding: '20px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+            <div>
+              <h2 style={{ fontSize: '16px', margin: 0 }}>Historial de actividades registradas</h2>
+              <p style={{ fontSize: '11px', color: '#766F87', margin: '4px 0 0' }}>
+                Seguimiento de refuerzos aplicados en PostgreSQL y verificación de avance (antes vs. después).
+              </p>
+            </div>
+            <Button icon="plus" size="sm" onClick={() => setActiveTab('propuestas')}>
+              Nueva actividad
+            </Button>
+          </div>
+
+          {recomendaciones.length === 0 ? (
+            <div style={{ padding: '30px', textAlign: 'center', color: '#766F87', fontSize: '12px' }}>
+              Aún no hay actividades registradas en PostgreSQL. Guarda una propuesta para comenzar el seguimiento.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              {recomendaciones.map((rec) => {
+                const badgeResultTone =
+                  rec.resultadoAvance === 'SUPERADO' ? 'green' : rec.resultadoAvance === 'NO_SUPERADO' ? 'red' : 'blue';
+
+                return (
+                  <article
+                    key={rec.id}
+                    style={{
+                      border: '1px solid #ECE7F2',
+                      borderRadius: '12px',
+                      padding: '16px',
+                      background: '#fff',
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '8px' }}>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                          <Badge tone={rec.tipo === 'GRUPAL' ? 'purple' : 'blue'}>
+                            {rec.tipo === 'GRUPAL' ? 'Refuerzo Grupal' : 'Individual'}
+                          </Badge>
+                          <Badge tone={rec.estado === 'APLICADA' ? 'green' : 'yellow'}>{rec.estado}</Badge>
+                          {rec.resultadoAvance && (
+                            <Badge tone={badgeResultTone}>
+                              Resultado: {rec.resultadoAvance}
+                            </Badge>
+                          )}
+                          <time style={{ fontSize: '10px', color: '#766F87' }}>
+                            {formatDateShort(rec.fecha_aplicacion || rec.created_at)}
+                          </time>
+                        </div>
+                        <h3 style={{ fontSize: '14px', margin: '0 0 4px', color: '#2E2838' }}>{rec.titulo}</h3>
+                        <small style={{ color: '#654B88', fontWeight: 600 }}>
+                          Criterio: {rec.criterio_descripcion || 'Seguimiento general'}
+                        </small>
+                      </div>
+
+                      <Button variant="secondary" size="sm" icon="edit" onClick={() => setUpdatingRec(rec)}>
+                        Registrar resultado / avance
+                      </Button>
+                    </div>
+
+                    <p style={{ fontSize: '11px', color: '#574E69', margin: '10px 0 6px', lineHeight: 1.5 }}>
+                      <strong>Propósito / Instrucciones:</strong> {rec.proposito || rec.descripcion}
+                    </p>
+
+                    {rec.observacionesDocente && (
+                      <div
+                        style={{
+                          background: '#FAF9FC',
+                          padding: '8px 12px',
+                          borderRadius: '8px',
+                          border: '1px solid #ECE7F2',
+                          fontSize: '10px',
+                          color: '#49356A',
+                          marginTop: '8px',
+                        }}
+                      >
+                        <strong>Notas pedagógicas de avance:</strong> {rec.observacionesDocente}
+                      </div>
+                    )}
+                  </article>
+                );
+              })}
             </div>
           )}
-        </section>
 
-        <section className="card proposal-panel">
-          <div className="panel-label">
-            <span>2</span>
-            <div>
-              <h2>Adapta la actividad propuesta</h2>
-              <p>Los cambios se guardarán en la base de datos para el seguimiento y portal del apoderado.</p>
-            </div>
-          </div>
-          <label>
-            Título de la actividad
-            <input disabled={!editing} value={titulo} onChange={(e) => setTitulo(e.target.value)} />
-          </label>
-          <label>
-            Descripción
-            <textarea disabled={!editing} value={descripcion} onChange={(e) => setDescripcion(e.target.value)} />
-          </label>
-          <div className="form-grid">
-            <label>
-              Fecha de aplicación
-              <input type="date" value={fechaAplicacion} onChange={(e) => setFechaAplicacion(e.target.value)} />
-            </label>
-          </div>
-          <label>
-            Observaciones
-            <textarea
-              value={observaciones}
-              onChange={(e) => setObservaciones(e.target.value)}
-              placeholder="Agrega indicaciones o ajustes para el estudiante..."
+          {updatingRec && (
+            <UpdateReinforcementModal
+              recomendacion={updatingRec}
+              onClose={() => setUpdatingRec(null)}
+              onSaved={(msg) => {
+                setUpdatingRec(null);
+                onSaved(msg);
+              }}
             />
-          </label>
-          <div className="proposal-actions">
-            <Button variant="secondary" icon="edit" onClick={() => setEditing(!editing)}>
-              {editing ? 'Bloquear edición' : 'Editar propuesta'}
-            </Button>
-            <Button icon="check" onClick={handleSaveRecomendacion}>
-              {saving ? 'Guardando...' : 'Guardar actividad en PostgreSQL'}
-            </Button>
-          </div>
+          )}
         </section>
-      </div>
+      )}
     </>
   );
 }
@@ -3061,6 +4303,7 @@ export function DocentePanel({ user, onLogout }: { user?: User | null; onLogout:
   const [alertFilterIds, setAlertFilterIds] = useState<number[] | null>(null);
   const [alertFilterLabel, setAlertFilterLabel] = useState('');
   const [analysisTab, setAnalysisTab] = useState<'group' | 'individual'>('group');
+  const [reinforcementPreset, setReinforcementPreset] = useState<any>(null);
 
   useEffect(() => {
     refreshAll();
@@ -3203,7 +4446,18 @@ export function DocentePanel({ user, onLogout }: { user?: User | null; onLogout:
       );
       break;
     case 'Evaluaciones':
-      content = <EvaluationsPage go={go} aulas={aulas} areas={areas} evaluaciones={evaluaciones} />;
+      content = (
+        <EvaluationsPage
+          go={go}
+          aulas={aulas}
+          areas={areas}
+          evaluaciones={evaluaciones}
+          onUpdated={async (msg) => {
+            showToast(msg);
+            await refreshAll();
+          }}
+        />
+      );
       break;
     case 'Registrar evaluación':
       content = (
@@ -3237,6 +4491,11 @@ export function DocentePanel({ user, onLogout }: { user?: User | null; onLogout:
           }}
           onPlanReinforcement={(id) => {
             setSelectedStudentId(id);
+            setReinforcementPreset({ tipo: 'INDIVIDUAL', estudianteId: id });
+            go('Actividades de refuerzo');
+          }}
+          onPlanGroupReinforcement={(presetData) => {
+            setReinforcementPreset(presetData);
             go('Actividades de refuerzo');
           }}
         />
@@ -3245,9 +4504,13 @@ export function DocentePanel({ user, onLogout }: { user?: User | null; onLogout:
     case 'Actividades de refuerzo':
       content = (
         <Reinforcement
+          aulas={aulas}
+          areas={areas}
           students={students}
           selectedStudentId={selectedStudentId}
           recomendaciones={recomendaciones}
+          preset={reinforcementPreset}
+          onClearPreset={() => setReinforcementPreset(null)}
           onSaved={async (msg) => {
             showToast(msg);
             await refreshAll();

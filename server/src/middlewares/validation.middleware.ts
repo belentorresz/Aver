@@ -137,6 +137,27 @@ export const SaveEvaluacionSchema = z.object({
   })).min(1, 'Debe incluir al menos un resultado de estudiante'),
 });
 
+export const UpdateEvaluacionSchema = z.object({
+  aulaId: z.coerce.number().int().positive().optional().nullable(),
+  areaId: z.coerce.number().int().positive('Seleccione un área académica'),
+  titulo: z.string().min(3, 'El título de la evaluación debe tener al menos 3 caracteres'),
+  fecha: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Formato de fecha inválido (YYYY-MM-DD)'),
+  sesion: z.string().optional().nullable(),
+  estado: z.enum(['BORRADOR', 'POR_REVISAR', 'COMPLETADA']).optional(),
+  criterios: z.array(z.object({
+    id: z.coerce.number().int().positive().optional(),
+    descripcion: z.string().min(3, 'La descripción del criterio es requerida'),
+  })).min(1, 'Debe incluir al menos un criterio de evaluación'),
+  resultados: z.array(z.object({
+    estudianteId: z.coerce.number().int().positive(),
+    criterioId: z.coerce.number().int().positive().optional(),
+    criterioIndex: z.coerce.number().int().min(0).optional(),
+    marca: z.enum(['LOGRADO', 'NO_LOGRADO', 'NO_OBSERVADO']),
+    nivelLogro: z.enum(['AD', 'A', 'B', 'C']).optional().nullable(),
+    observaciones: z.string().optional().nullable(),
+  })).optional().default([]),
+});
+
 export const AgendaEventoSchema = z.object({
   aulaId: z.coerce.number().int().positive().optional().nullable(),
   tipo: z.enum(['REUNION', 'EVALUACION', 'ACTIVIDAD', 'COMUNICADO']),
@@ -157,13 +178,36 @@ export const CancelAgendaEventoSchema = z.object({
 });
 
 export const CreateRecomendacionSchema = z.object({
-  estudianteId: z.coerce.number().int().positive(),
+  estudianteId: z.coerce.number().int().positive().optional().nullable(),
+  aulaId: z.coerce.number().int().positive().optional().nullable(),
   criterioId: z.coerce.number().int().positive().optional().nullable(),
+  tipo: z.enum(['INDIVIDUAL', 'GRUPAL']).optional().default('INDIVIDUAL'),
   titulo: z.string().min(3, 'Ingrese el título de la actividad de refuerzo'),
   descripcion: z.string().min(5, 'Ingrese la descripción de la actividad'),
+  proposito: z.string().optional().nullable(),
+  materiales: z.string().optional().nullable(),
+  duracionMinutos: z.coerce.number().int().positive().optional().default(45),
+  justificacion: z.string().optional().nullable(),
+  estado: z.enum(['PROPUESTA', 'ACEPTADA', 'APLICADA', 'DESCARTADA']).optional().default('ACEPTADA'),
+  fechaAplicacion: z.string().optional().nullable(),
+  resultadoAvance: z.enum(['SUPERADO', 'EN_PROCESO', 'NO_SUPERADO']).optional().nullable(),
+  observaciones: z.string().optional().nullable(),
+  estudiantesAfectados: z.array(z.any()).optional().nullable(),
+});
+
+export const UpdateRecomendacionSchema = z.object({
+  titulo: z.string().min(3, 'Ingrese el título de la actividad de refuerzo').optional(),
+  descripcion: z.string().min(5, 'Ingrese la descripción de la actividad').optional(),
+  proposito: z.string().optional().nullable(),
+  materiales: z.string().optional().nullable(),
+  duracionMinutos: z.coerce.number().int().positive().optional(),
+  justificacion: z.string().optional().nullable(),
   estado: z.enum(['PROPUESTA', 'ACEPTADA', 'APLICADA', 'DESCARTADA']).optional(),
   fechaAplicacion: z.string().optional().nullable(),
+  resultadoAvance: z.enum(['SUPERADO', 'EN_PROCESO', 'NO_SUPERADO']).optional().nullable(),
   observaciones: z.string().optional().nullable(),
+  estudiantesAfectados: z.array(z.any()).optional().nullable(),
+  comparacion: z.any().optional().nullable(),
 });
 
 export const UpdateDocentePerfilSchema = z.object({
