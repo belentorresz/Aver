@@ -177,16 +177,26 @@ function Button({
   icon,
   onClick,
   type = 'button',
+  size,
+  disabled,
 }: {
   children: ReactNode;
   variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
   icon?: IconName;
   onClick?: () => void;
   type?: 'button' | 'submit';
+  size?: 'sm' | 'md' | 'lg';
+  disabled?: boolean;
 }) {
   return (
-    <button type={type} className={`btn ${variant}`} onClick={onClick}>
-      {icon && <Icon name={icon} size={17} />}
+    <button
+      type={type}
+      className={`btn ${variant} ${size === 'sm' ? 'btn-sm' : ''}`}
+      onClick={onClick}
+      disabled={disabled}
+      style={size === 'sm' ? { padding: '5px 12px', fontSize: '11px', height: 'auto' } : undefined}
+    >
+      {icon && <Icon name={icon} size={size === 'sm' ? 14 : 17} />}
       {children}
     </button>
   );
