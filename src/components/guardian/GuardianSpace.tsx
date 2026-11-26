@@ -210,7 +210,7 @@ export function GuardianSpace() {
               <div className="summary-card">
                 <div className="summary-icon purple">
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>
+                    <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />
                   </svg>
                 </div>
                 <div>
@@ -223,7 +223,7 @@ export function GuardianSpace() {
               <div className="summary-card">
                 <div className="summary-icon green">
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="m5 12 4 4L19 6"/>
+                    <path d="m5 12 4 4L19 6" />
                   </svg>
                 </div>
                 <div>
@@ -236,7 +236,7 @@ export function GuardianSpace() {
               <div className="summary-card">
                 <div className="summary-icon orange">
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M12 3 2.5 20h19z"/><path d="M12 9v5M12 17.5v.5"/>
+                    <path d="M12 3 2.5 20h19z" /><path d="M12 9v5M12 17.5v.5" />
                   </svg>
                 </div>
                 <div>
@@ -249,7 +249,7 @@ export function GuardianSpace() {
               <div className="summary-card">
                 <div className="summary-icon blue">
                   <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 10h18"/>
+                    <rect x="3" y="5" width="18" height="16" rx="2" /><path d="M7 3v4M17 3v4M3 10h18" />
                   </svg>
                 </div>
                 <div>
@@ -409,7 +409,7 @@ export function GuardianSpace() {
                         <article className="support-item" key={`al-${idx}`}>
                           <div className="support-icon orange">
                             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <path d="M12 3 2.5 20h19z"/><path d="M12 9v5M12 17.5v.5"/>
+                              <path d="M12 3 2.5 20h19z" /><path d="M12 9v5M12 17.5v.5" />
                             </svg>
                           </div>
                           <div>
@@ -423,7 +423,7 @@ export function GuardianSpace() {
                         <article className="support-item" key={`rec-${idx}`}>
                           <div className="support-icon violet">
                             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                              <path d="M3 4h7a2 2 0 0 1 2 2v15a3 3 0 0 0-3-3H3zM21 4h-7a2 2 0 0 0-2 2v15a3 3 0 0 1 3-3h6z"/>
+                              <path d="M3 4h7a2 2 0 0 1 2 2v15a3 3 0 0 0-3-3H3zM21 4h-7a2 2 0 0 0-2 2v15a3 3 0 0 1 3-3h6z" />
                             </svg>
                           </div>
                           <div>
